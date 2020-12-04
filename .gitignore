@@ -53,6 +53,7 @@ docs/latest.yaml
 # terraform
 .terraform
 terraform.tfstate
+.terraform.lock.hcl
 
 # macOS
 **/.DS_Store
