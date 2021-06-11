@@ -137,6 +137,20 @@ func (h *Handler) createAppSession(w http.ResponseWriter, r *http.Request, p htt
 
 	h.log.Debugf("Creating application web session for %v in %v.", result.PublicAddr, result.ClusterName)
 
+	// TODO(r0mant): Remove this, role ARN should be passed as a parameter.
+	wsCertificate, err := tlsca.ParseCertificatePEM(ctx.session.GetTLSCert())
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	wsIdentity, err := tlsca.FromSubject(wsCertificate.Subject, wsCertificate.NotAfter)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	var roleARN string
+	if len(wsIdentity.AWSRoleARNs) > 0 {
+		roleARN = wsIdentity.AWSRoleARNs[0]
+	}
+
 	// Create an application web session.
 	//
 	// Application sessions should not last longer than the parent session.TTL
@@ -149,6 +163,7 @@ func (h *Handler) createAppSession(w http.ResponseWriter, r *http.Request, p htt
 		Username:    ctx.GetUser(),
 		PublicAddr:  result.PublicAddr,
 		ClusterName: result.ClusterName,
+		AWSRoleARN:  roleARN,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
