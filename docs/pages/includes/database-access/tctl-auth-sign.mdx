@@ -1,0 +1,26 @@
+Teleport uses mutual TLS authentication with self-hosted databases. As such,
+they must be configured with Teleport's certificate authority to be able to
+validate client certificates and a certificate/key pair that Teleport can
+validate.
+
+To create these secrets, use `tctl auth sign` command. It can be run either
+[locally](../../architecture/overview.mdx#tctl) on the auth server, or from the
+client machine after logging in with `tsh login` (for example, when using
+[Teleport Cloud](../../cloud/introduction.mdx)).
+
+In the latter case, user must be allowed to impersonate the system role `Db` in
+order to be able to generate the database certificate, by having the following
+allow rule in their role:
+
+```yaml
+allow:
+  impersonate:
+    users: ["Db"]
+    roles: ["Db"]
+```
+
+<Admonition type="note" title="Certificate Rotation">
+  Teleport signs database certificates with the host authority. As such,
+  when performing [host certificates rotation](../../admin-guide.mdx#certificate-rotation),
+  the database certificates must be updated as well.
+</Admonition>

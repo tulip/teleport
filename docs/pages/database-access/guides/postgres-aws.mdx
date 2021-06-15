@@ -76,52 +76,12 @@ GRANT rds_iam TO alice;
 See [Creating a database account using IAM authentication](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/UsingWithRDS.IAMDBAuth.DBAccounts.html)
 for more information.
 
-## Configure Teleport
+## Setup Teleport Auth and Proxy Services
 
-Teleport Database Access is available starting from `6.0` release.
+Teleport Database Access for PostgreSQL on AWS is available starting from `6.0`
+release.
 
-Download the appropriate version of Teleport for your platform from
-our [downloads page](https://goteleport.com/teleport/download).
-
-Follow the installation [instructions](../../installation.mdx).
-
-### Start Auth/Proxy Service
-
-Create a configuration file for a Teleport service that will be running
-auth and proxy servers:
-
-```yaml
-teleport:
-  data_dir: /var/lib/teleport
-  nodename: test
-auth_service:
-  enabled: "yes"
-proxy_service:
-  enabled: "yes"
-  # Set public address proxy will be reachable at.
-  public_addr: teleport.example.com:3080
-  # PostgreSQL proxy is listening on a regular web proxy port.
-  web_listen_addr: 0.0.0.0:3080
-ssh_service:
-  enabled: "no"
-```
-
-Start the service:
-
-```sh
-$ teleport start --config=/path/to/teleport.yaml
-```
-
-Generate a short-lived join token for the database service and save it for
-example in `/tmp/token`:
-
-```sh
-$ tctl tokens add \
-    --type=db \
-    --db-name=test \
-    --db-protocol=postgres \
-    --db-uri=postgres.example.com:5432
-```
+(!docs/pages/includes/database-access/start-auth-proxy.mdx!)
 
 ### Create Role and User
 
@@ -277,18 +237,21 @@ when connecting to the database instance:
 $ tsh db login --db-user=postgres --db-name=postgres aurora
 ```
 
-When logging into a PostgreSQL database, `tsh` automatically configures a section
-in the [connection service file](https://www.postgresql.org/docs/current/libpq-pgservice.html)
-with the name of `<cluster-name>-<database-service-name>`.
+Once logged in, connect to the database:
 
-Suppose the cluster name is "root", then you can connect to the database using
-the following `psql` command:
+```bash
+$ tsh db connect aurora
+```
 
-```sh
-# Use default database user and database name.
-$ psql "service=root-aurora"
-# Specify database user and database name explicitly.
-$ psql "service=root-aurora user=alice dbname=metrics"
+<Admonition type="note" title="Note">
+  The `psql` command-line client should be available in PATH in order to be
+  able to connect.
+</Admonition>
+
+If you would like to see the native `psql` shell connect command, run:
+
+```bash
+$ tsh db config --format=cmd aurora
 ```
 
 To log out of the database and remove credentials:
