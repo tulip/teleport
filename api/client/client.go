@@ -1319,6 +1319,48 @@ func (c *Client) DeleteAllNodes(ctx context.Context, namespace string) error {
 	return trail.FromGRPC(err)
 }
 
+// StreamSessionEvents streams audit events from a given session recording.
+func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string) (context.Context, chan events.AuditEvent) {
+	request := &proto.StreamSessionEventsRequest{
+		SessionID: sessionID,
+	}
+
+	ch := make(chan events.AuditEvent)
+
+	stream, err := c.grpc.StreamSessionEvents(ctx, request)
+	if err != nil {
+		close(ch)
+		return utils.NewErrContext(trace.Wrap(err)), ch
+	}
+
+	subCtx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		for {
+			oneOf, _ := stream.Recv()
+			if err != nil {
+				if err != io.EOF {
+					cancel()
+				}
+
+				break
+			}
+
+			event, err := events.FromOneOf(*oneOf)
+			if err != nil {
+				cancel()
+				break
+			}
+
+			ch <- event
+		}
+
+		close(ch)
+	}()
+
+	return subCtx, ch
+}
+
 // SearchEvents allows searching for events with a full pagination support.
 func (c *Client) SearchEvents(ctx context.Context, fromUTC, toUTC time.Time, namespace string, eventTypes []string, limit int, startKey string) ([]events.AuditEvent, string, error) {
 	request := &proto.GetEventsRequest{

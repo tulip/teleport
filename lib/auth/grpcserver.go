@@ -2683,6 +2683,37 @@ func (g *GRPCServer) authenticate(ctx context.Context) (*grpcContext, error) {
 	}, nil
 }
 
+// Streams events from a session recording.
+func (g *GRPCServer) StreamSessionEvents(req *proto.StreamSessionEventsRequest, stream proto.AuthService_StreamSessionEventsServer) error {
+	auth, err := g.authenticate(context.TODO())
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	ctx, c := auth.ServerWithRoles.StreamSessionEvents(context.TODO(), req.SessionID)
+
+	for {
+		select {
+		case event, more := <-c:
+			if !more {
+				return nil
+			}
+
+			oneOf, err := apievents.ToOneOf(event)
+			if err != nil {
+				return trace.Wrap(err)
+			}
+
+			if err := stream.Send(oneOf); err != nil {
+				return trace.Wrap(err)
+			}
+		case <-ctx.Done():
+			close(c)
+			return trace.Wrap(ctx.Err())
+		}
+	}
+}
+
 // GetEvents searches for events on the backend and sends them back in a response.
 func (g *GRPCServer) GetEvents(ctx context.Context, req *proto.GetEventsRequest) (*proto.Events, error) {
 	auth, err := g.authenticate(ctx)

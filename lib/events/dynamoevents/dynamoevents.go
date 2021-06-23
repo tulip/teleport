@@ -33,6 +33,7 @@ import (
 	"github.com/gravitational/teleport"
 	apidefaults "github.com/gravitational/teleport/api/defaults"
 	apievents "github.com/gravitational/teleport/api/types/events"
+	apiutils "github.com/gravitational/teleport/api/utils"
 	"github.com/gravitational/teleport/lib/backend"
 	"github.com/gravitational/teleport/lib/backend/dynamo"
 	"github.com/gravitational/teleport/lib/events"
@@ -1411,4 +1412,11 @@ func convertError(err error) error {
 	default:
 		return err
 	}
+}
+
+// StreamSessionEvents streams all events from a given session recording. A subcontext
+// is created from the supplied context and is cancelled if the parent context gets cancelled
+// or the function encounters an error.
+func (l *Log) StreamSessionEvents(ctx context.Context, sessionID string) (context.Context, chan apievents.AuditEvent) {
+	return apiutils.NewErrContext(trace.NotImplemented("not implemented")), make(chan apievents.AuditEvent)
 }

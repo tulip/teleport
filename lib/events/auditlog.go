@@ -1041,6 +1041,78 @@ func (l *AuditLog) SearchSessionEvents(fromUTC, toUTC time.Time, limit int, star
 	return l.localLog.SearchSessionEvents(fromUTC, toUTC, limit, startKey)
 }
 
+const chunkStreamSize = 64 * 1024
+
+type chunkStream struct {
+	log       *AuditLog
+	sessionID session.ID
+	buffer    []byte
+	readUntil int
+	offset    int
+}
+
+func (c *chunkStream) Read(p []byte) (n int, err error) {
+	if c.readUntil >= len(c.buffer) {
+		chunk, err := c.log.GetSessionChunk("default", c.sessionID, c.offset, chunkStreamSize)
+		if err != nil {
+			if trace.Unwrap(err) == io.EOF {
+				return 0, io.EOF
+			}
+
+			return 0, err
+		}
+
+		c.buffer = chunk
+		c.readUntil = 0
+		c.offset += len(c.buffer)
+	}
+
+	written := copy(p, c.buffer[c.readUntil:])
+	c.readUntil += written
+	return written, nil
+}
+
+// StreamSessionEvents streams all events from a given session recording. A subcontext
+// is created from the supplied context and is cancelled if the parent context gets cancelled
+// or the function encounters an error.
+func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID string) (context.Context, chan apievents.AuditEvent) {
+	l.log.Debugf("StreamSessionEvents(%v)", sessionID)
+
+	rawStream := &chunkStream{
+		log:       l,
+		sessionID: session.ID(sessionID),
+		readUntil: chunkStreamSize,
+		offset:    0,
+	}
+
+	protoReader := NewProtoReader(rawStream)
+	c := make(chan apievents.AuditEvent)
+	ctx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		for {
+			if ctx.Err() != nil {
+				close(c)
+				break
+			}
+
+			event, err := protoReader.Read(ctx)
+			if err != nil {
+				if err != io.EOF {
+					cancel()
+				}
+
+				close(c)
+				break
+			}
+
+			c <- event
+		}
+	}()
+
+	return ctx, c
+}
+
 // getLocalLog returns the local (file based) audit log.
 func (l *AuditLog) getLocalLog() IAuditLog {
 	l.RLock()
@@ -1234,4 +1306,10 @@ func (a *closedLogger) WaitForDelivery(context.Context) error {
 
 func (a *closedLogger) Close() error {
 	return trace.NotImplemented(loggerClosedMessage)
+}
+
+func (a *closedLogger) StreamSessionEvents(_ctx context.Context, sessionID string) (context.Context, chan apievents.AuditEvent) {
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	cancel()
+	return ctx, make(chan apievents.AuditEvent)
 }

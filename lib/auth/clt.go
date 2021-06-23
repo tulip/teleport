@@ -1447,6 +1447,13 @@ func (c *Client) GetSessionEvents(namespace string, sid session.ID, afterN int, 
 	return retval, nil
 }
 
+// StreamSessionEvents streams all events from a given session recording. A subcontext
+// is created from the supplied context and is cancelled if the parent context gets cancelled
+// or the function encounters an error.
+func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string) (context.Context, chan apievents.AuditEvent) {
+	return c.APIClient.StreamSessionEvents(ctx, sessionID)
+}
+
 // SearchEvents allows searching for audit events with pagination support.
 func (c *Client) SearchEvents(fromUTC, toUTC time.Time, namespace string, eventTypes []string, limit int, startKey string) ([]apievents.AuditEvent, string, error) {
 	events, lastKey, err := c.APIClient.SearchEvents(context.TODO(), fromUTC, toUTC, namespace, eventTypes, limit, startKey)
