@@ -1,11 +1,11 @@
 ---
 title: Database Access with Self-Hosted PostgreSQL
-description: How to configure Teleport Database Access with self-hosted PostgreSQL
+description: How to configure Teleport Database Access with self-hosted PostgreSQL.
 ---
 
 # Self-Hosted PostgreSQL
 
-## Create Certificate/Key Pair
+## Create certificate/key pair
 
 (!docs/pages/includes/database-access/tctl-auth-sign.mdx!)
 
@@ -22,7 +22,7 @@ $ tctl auth sign --format=db --host=db.example.com --out=server --ttl=2190h
 The command will create 3 files: `server.cas`, `server.crt` and `server.key`
 which you'll need to enable mutual TLS on your PostgreSQL server.
 
-## Configure PostgreSQL Server
+## Configure PostgreSQL server
 
 To configure PostgreSQL server to accept TLS connections, add the following
 to PostgreSQL configuration file `postgresql.conf`:
@@ -53,14 +53,14 @@ certificate-based Teleport login will fail.
 See [The pg_hba.conf File](https://www.postgresql.org/docs/current/auth-pg-hba-conf.html)
 in PostgreSQL documentation for more details.
 
-## Setup Teleport Auth and Proxy Services
+## Setup Teleport Auth and Proxy services
 
 Teleport Database Access for PostgreSQL is available starting from `6.0`
 release.
 
 (!docs/pages/includes/database-access/start-auth-proxy.mdx!)
 
-### Create Role and User
+### Create role and user
 
 Create the role that will allow a user to connect to any database using any
 database account:
@@ -88,7 +88,7 @@ Create the user assigned the `db` role we've just created:
 $ tctl --config=/path/to/teleport.yaml users add --roles=admin,db testuser
 ```
 
-### Start Database Service with CLI Flags
+### Start Database service with CLI flags
 
 You can start Teleport database service without configuration file, using a
 CLI command:
@@ -107,7 +107,7 @@ Note that the `--auth-server` flag must point to the Teleport cluster's proxy en
 because database service always connects back to the cluster over a reverse
 tunnel.
 
-### Start Database Service with Config File
+### Start Database service with config file
 
 Below is an example of a database service configuration file that proxies
 a single self-hosted PostgreSQL database:

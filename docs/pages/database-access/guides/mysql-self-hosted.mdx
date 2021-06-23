@@ -1,6 +1,6 @@
 ---
 title: Database Access with Self-Hosted MySQL
-description: How to configure Teleport Database Access with self-hosted MySQL
+description: How to configure Teleport Database Access with self-hosted MySQL.
 ---
 
 # Self-Hosted MySQL
@@ -13,7 +13,7 @@ Create the secrets:
 
 ```sh
 # Export Teleport's certificate authority and generate certificate/key pair
-# for host db.example.com with a 1-year validity period.
+# for host db.example.com with a 3-month validity period.
 $ tctl auth sign --format=db --host=db.example.com --out=server --ttl=2190h
 ```
 

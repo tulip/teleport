@@ -1,11 +1,11 @@
 ---
 title: Database Access with MySQL on GCP Cloud SQL
-description: How to configure Teleport Database Access with GCP Cloud SQL MySQL
+description: How to configure Teleport Database Access with GCP Cloud SQL MySQL.
 ---
 
 # GCP Cloud SQL MySQL
 
-## Create Service Account for Teleport Database Service
+## Create service account for Teleport Database service
 
 Teleport uses one-time passwords to authenticate with Cloud SQL MySQL. To be
 able to authenticate with a database instance, Teleport must run as a service
@@ -43,7 +43,7 @@ Make sure to choose JSON format:
 Save the file, your Teleport Database Service will need to use it as GCP
 application credentials file.
 
-## Gather Cloud SQL Instance Information
+## Gather Cloud SQL instance information
 
 To connect a Cloud SQL database to Teleport, you'll need to gather a few pieces
 of information about the instance.
@@ -74,14 +74,14 @@ file from the Connections tab under Security section:
 
 ![Instance Root Certificate](../../../img/database-access/guides/cloudsql/instance-root-ca@2x.png)
 
-## Setup Teleport Auth and Proxy Services
+## Setup Teleport Auth and Proxy services
 
 Teleport Database Access for Cloud SQL MySQL is available starting from `7.0`
 release.
 
 (!docs/pages/includes/database-access/start-auth-proxy.mdx!)
 
-### Create User
+### Create user
 
 Create local Teleport user with the built-in `access` role:
 
@@ -119,7 +119,7 @@ $ tctl create alice.yaml -f
 For more detailed information about database access controls see [RBAC](../rbac.mdx)
 documentation.
 
-## Setup Teleport Database Service
+## Setup Teleport Database service
 
 Below is an example of a database service configuration file that proxies
 a single Cloud SQL MySQL database:
@@ -180,7 +180,7 @@ Start the database service:
 $ teleport start --config=/path/to/teleport-db.yaml --token=/tmp/token
 ```
 
-### GCP Credentials
+### GCP credentials
 
 Teleport Database Service must have credentials of `teleport-db-service` GCP
 service account we created [above](#create-service-account-for-teleport-database-service)

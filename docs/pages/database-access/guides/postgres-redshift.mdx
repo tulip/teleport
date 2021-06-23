@@ -1,6 +1,6 @@
 ---
 title: Database Access with Redshift on AWS
-description: How to configure Teleport Database Access with AWS Redshift PostgreSQL
+description: How to configure Teleport Database Access with AWS Redshift PostgreSQL.
 ---
 
 # AWS Redshift PostgreSQL
@@ -34,7 +34,7 @@ maintenance database are displayed on the `Database configurations` panel of the
 ![Redshift cluster user/database](../../../img/database-access/guides/redshift/cluster-user-db@2x.png)
 </Figure>
 
-## Create IAM Policy
+## Create IAM policy
 
 Teleport uses [IAM tokens](https://docs.aws.amazon.com/redshift/latest/mgmt/generating-user-credentials.html)
 to authenticate with Redshift databases. IAM authentication is enabled by default
@@ -93,13 +93,13 @@ Parameters:
 See [AWS documentation](https://docs.aws.amazon.com/redshift/latest/mgmt/generating-iam-credentials-role-permissions.html)
 for more information about setting up an IAM role.
 
-## Setup Teleport Auth and Proxy Services
+## Setup Teleport Auth and Proxy services
 
 Teleport Database Access for Redshift is available starting from `6.2` release.
 
 (!docs/pages/includes/database-access/start-auth-proxy.mdx!)
 
-### Create User
+### Create user
 
 Create a local Teleport user with the built-in `access` role:
 
@@ -140,7 +140,7 @@ $ tctl create alice.yaml -f
 For more detailed information about database access controls see [RBAC](../rbac.mdx)
 documentation.
 
-## Setup Teleport Database Service
+## Setup Teleport Database service
 
 Below is an example of a database service configuration file that proxies
 a single Redshift database:
@@ -201,7 +201,7 @@ Start the database service:
 $ teleport start --config=/path/to/teleport-db.yaml --token=/tmp/token
 ```
 
-### AWS Credentials
+### AWS credentials
 
 Teleport Database Service must have an IAM role allowing it to generate IAM
 auth tokens which we created in the [Create IAM Policy](#create-iam-policy)

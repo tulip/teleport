@@ -1,6 +1,6 @@
 ---
 title: Database Access with Self-Hosted MongoDB
-description: How to configure Teleport Database Access with self-hosted MongoDB
+description: How to configure Teleport Database Access with self-hosted MongoDB.
 ---
 
 # Self-Hosted MongoDB
@@ -12,7 +12,7 @@ description: How to configure Teleport Database Access with self-hosted MongoDB
   version, consider upgrading.
 </Admonition>
 
-## Create Certificate/Key Pair
+## Create certificate/key pair
 
 (!docs/pages/includes/database-access/tctl-auth-sign.mdx!)
 
@@ -115,7 +115,7 @@ mutual TLS. Use the files generated above by the `tctl auth sign` command:
 When configuring a replica set, make sure to do it for each member and use
 secrets generated for the particular server.
 
-<Admonition type="note" title="">
+<Admonition type="note">
   Once mutual TLS has been enabled, you will no longer be able to connect to
   the cluster without providing a valid client certificate. You can use
   `net.tls.allowConnectionsWithoutCertificates` setting to allow connections
@@ -125,13 +125,13 @@ secrets generated for the particular server.
 See [Configure TLS/SSL](https://docs.mongodb.com/manual/tutorial/configure-ssl/)
 in MongoDB documentation for more details.
 
-## Setup Teleport Auth and Proxy Services
+## Setup Teleport Auth and Proxy services
 
 Teleport Database Access for MongoDB is available starting from `7.0` release.
 
 (!docs/pages/includes/database-access/start-auth-proxy.mdx!)
 
-### Create User
+### Create user
 
 Create a local Teleport user with the built-in `access` role:
 
@@ -172,12 +172,12 @@ $ tctl create alice.yaml -f
 For more detailed information about database access controls see [RBAC](../rbac.mdx)
 documentation.
 
-### Start Database Service with CLI Flags
+### Start Database service with CLI flags
 
 For a quick try-out, Teleport database service doesn't require a configuration
 file and can be launched using a single CLI command:
 
-```sh
+```bash
 $ teleport db start \
    --token=/tmp/token \
    --auth-server=teleport.example.com:3080 \
@@ -191,7 +191,7 @@ Note that the `--auth-server` flag must point to the Teleport cluster's proxy
 endpoint because database service always connects back to the cluster over a
 reverse tunnel.
 
-### Start Database Service with Config File
+### Start Database service with config file
 
 Below is an example of a database service configuration file that proxies
 a single self-hosted MongoDB database:
@@ -242,11 +242,11 @@ proxy_service:
 
 Start the database service:
 
-```sh
+```bash
 $ teleport start --config=/path/to/teleport-db.yaml --token=/tmp/token
 ```
 
-## Standalone vs Replica Set
+## Standalone vs replica set
 
 You can specify either a single connection address as a MongoDB connection URI,
 or a [connection string](https://docs.mongodb.com/manual/reference/connection-string/).
@@ -292,7 +292,7 @@ or a [connection string](https://docs.mongodb.com/manual/reference/connection-st
 Once the database service has joined the cluster, login to see the available
 databases:
 
-```sh
+```bash
 $ tsh login --proxy=teleport.example.com:3080 --user=testuser
 $ tsh db ls
 Name          Description     Labels
@@ -306,7 +306,7 @@ Note that you will only be able to see databases your role has access to. See
 To connect to a particular database server, first retrieve credentials from
 Teleport using `tsh db login` command:
 
-```sh
+```bash
 $ tsh db login example-mongo
 ```
 
@@ -317,7 +317,7 @@ $ tsh db login example-mongo
 You can optionally specify the database name and the user to use by default
 when connecting to the database instance:
 
-```sh
+```bash
 $ tsh db login --db-user=alice example-mongo
 ```
 
@@ -340,7 +340,7 @@ $ tsh db config --format=cmd example-mongo
 
 To log out of the database and remove credentials:
 
-```sh
+```bash
 # Remove credentials for a particular database instance.
 $ tsh db logout example-mongo
 # Remove credentials for all database instances.

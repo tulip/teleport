@@ -1,15 +1,16 @@
 ---
-title: Database Access High Availability
-description: How to configure Teleport Database Access in HA configuration
+title: Database Access High Availability (HA)
+description: How to configure Teleport Database Access in a Highly Available (HA) configuration.
 ---
 
-# Database Access High Availability
+# Database Access High Availability (HA)
 
-You can deploy Database Access in a highly available configuration in a couple
-of common ways: separate replicas and combined replicas. Both of those revolve
-around pointing multiple Database Services to the same database instance.
+You can deploy Database Access in a Highly Available (HA) configuration in a
+couple of common ways: separate replicas and combined replicas. Both of those
+revolve around pointing multiple Database Services to the same database
+instance.
 
-## Separate Replicas
+## Separate replicas
 
 With separate replicas, each Database Service agent proxying the database
 assigns it a different name. This allows you to explicitly pick the agent
@@ -57,7 +58,7 @@ $ tsh db connect postgres-us-east-1a
 This approach is useful when you want to have control over which replica
 you're using to connect.
 
-## Combined Replicas
+## Combined replicas
 
 A more common approach is to assign the same `name` to each Database Service
 proxying the database.
