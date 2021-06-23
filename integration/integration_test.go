@@ -46,6 +46,7 @@ import (
 	apidefaults "github.com/gravitational/teleport/api/defaults"
 	"github.com/gravitational/teleport/api/profile"
 	"github.com/gravitational/teleport/api/types"
+	apievents "github.com/gravitational/teleport/api/types/events"
 	apiutils "github.com/gravitational/teleport/api/utils"
 	"github.com/gravitational/teleport/api/utils/keypaths"
 	"github.com/gravitational/teleport/lib"
@@ -209,6 +210,7 @@ func TestIntegrations(t *testing.T) {
 	t.Run("TwoClustersTunnel", suite.bind(testTwoClustersTunnel))
 	t.Run("UUIDBasedProxy", suite.bind(testUUIDBasedProxy))
 	t.Run("WindowChange", suite.bind(testWindowChange))
+	t.Run("SessionStreaming", suite.bind(testSessionStreaming))
 }
 
 // testAuditOn creates a live session, records a bunch of data through it
@@ -5456,4 +5458,52 @@ func TestTraitsPropagation(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 	require.Equal(t, "hello leaf", strings.TrimSpace(outputLeaf))
+}
+
+// testSessionStreaming tests streaming events from session recordings.
+func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
+	ctx := context.TODO()
+	const sessionID = "testsession"
+	rc := NewInstance(InstanceConfig{
+		ClusterName: "example.com",
+		HostID:      uuid.New(),
+		NodeName:    Host,
+		Ports:       ports.PopIntSlice(6),
+		Priv:        suite.priv,
+		Pub:         suite.pub,
+		log:         testlog.FailureOnly(t),
+	})
+
+	api := rc.GetSiteAPI(Site)
+	auditStream, err := api.CreateAuditStream(ctx, sessionID)
+	require.Nil(t, err)
+
+	for i := 0; i < 1000; i++ {
+		err = auditStream.EmitAuditEvent(ctx, &apievents.SessionPrint{
+			Metadata: apievents.Metadata{
+				Index: int64(i),
+				Type:  events.SessionPrintEvent,
+				Time:  time.Now(),
+			},
+			ChunkIndex: int64(i),
+		})
+
+		require.Nil(t, err)
+	}
+
+	err = auditStream.Complete(ctx)
+	require.Nil(t, err)
+
+	ctx, sessionPlayback := api.StreamSessionEvents(ctx, sessionID)
+
+	for i := 0; i < 1000; i++ {
+		select {
+		case event := <-sessionPlayback:
+			printEvent, ok := event.(*apievents.SessionPrint)
+			require.True(t, ok)
+			require.Equal(t, i, printEvent.ChunkIndex)
+		case err := <-ctx.Done():
+			require.Nil(t, err)
+		}
+	}
 }
