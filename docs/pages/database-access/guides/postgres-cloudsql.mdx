@@ -62,10 +62,10 @@ in Google Cloud documentation for more info.
 The final part of GCP configuration is to create a service account for the
 Teleport Database service with the following IAM roles:
 
-* "Service Account Token Creator": will allow Database service to generate
+- "Service Account Token Creator": will allow Database service to generate
   IAM auth tokens when connecting to the database as the service account user
   we created above.
-* "Cloud SQL Viewer": will allow Database service to automatically download
+- "Cloud SQL Viewer": will allow Database service to automatically download
   your Cloud SQL instance root CA certificate.
 
 If creating a new one, go to the [Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts)
