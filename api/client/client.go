@@ -1337,14 +1337,15 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 	subCtx, cancel := context.WithCancel(ctx)
 
 	go func() {
+	outer:
 		for {
-			oneOf, _ := stream.Recv()
+			oneOf, err := stream.Recv()
 			if err != nil {
 				if err != io.EOF {
 					cancel()
 				}
 
-				break
+				break outer
 			}
 
 			event, err := events.FromOneOf(*oneOf)
