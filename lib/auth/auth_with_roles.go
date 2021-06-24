@@ -3070,12 +3070,12 @@ func (a *ServerWithRoles) SearchSessionEvents(fromUTC, toUTC time.Time, limit in
 // StreamSessionEvents streams all events from a given session recording. A subcontext
 // is created from the supplied context and is cancelled if the parent context gets cancelled
 // or the function encounters an error.
-func (a *ServerWithRoles) StreamSessionEvents(ctx context.Context, sessionID string) (context.Context, chan apievents.AuditEvent) {
+func (a *ServerWithRoles) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent) {
 	if err := a.action(apidefaults.Namespace, types.KindSession, types.VerbList); err != nil {
 		return apiutils.NewErrContext(trace.Wrap(err)), make(chan apievents.AuditEvent)
 	}
 
-	return a.alog.StreamSessionEvents(ctx, sessionID)
+	return a.alog.StreamSessionEvents(ctx, sessionID, startIndex)
 }
 
 // NewAdminAuthServer returns auth server authorized as admin,

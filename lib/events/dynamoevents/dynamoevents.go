@@ -1417,6 +1417,6 @@ func convertError(err error) error {
 // StreamSessionEvents streams all events from a given session recording. A subcontext
 // is created from the supplied context and is cancelled if the parent context gets cancelled
 // or the function encounters an error.
-func (l *Log) StreamSessionEvents(ctx context.Context, sessionID string) (context.Context, chan apievents.AuditEvent) {
+func (l *Log) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent) {
 	return apiutils.NewErrContext(trace.NotImplemented("not implemented")), make(chan apievents.AuditEvent)
 }

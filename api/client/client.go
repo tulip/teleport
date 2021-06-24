@@ -1320,9 +1320,10 @@ func (c *Client) DeleteAllNodes(ctx context.Context, namespace string) error {
 }
 
 // StreamSessionEvents streams audit events from a given session recording.
-func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string) (context.Context, chan events.AuditEvent) {
+func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan events.AuditEvent) {
 	request := &proto.StreamSessionEventsRequest{
-		SessionID: sessionID,
+		SessionID:  sessionID,
+		StartIndex: int32(startIndex),
 	}
 
 	ch := make(chan events.AuditEvent)

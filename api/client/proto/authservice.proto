@@ -809,6 +809,9 @@ message IsMFARequiredRequest {
 message StreamSessionEventsRequest {
     // SessionID is the ID for a given session in an UUIDv4 format.
     string SessionID = 1;
+    // StartIndex is the index of the event to resume the stream after.
+    // A StartIndex of 0 creates a new stream.
+    int32 StartIndex = 2;
 }
 
 // NodeLogin specifies an SSH node and OS login.

@@ -5494,7 +5494,7 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 	err = auditStream.Complete(ctx)
 	require.Nil(t, err)
 
-	ctx, sessionPlayback := api.StreamSessionEvents(ctx, sessionID)
+	ctx, sessionPlayback := api.StreamSessionEvents(ctx, sessionID, 0)
 
 	for i := 0; i < 1000; i++ {
 		select {

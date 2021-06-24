@@ -19,8 +19,8 @@ ARCH ?= amd64
 RUNTIME ?= go1.16.2
 BORINGCRYPTO_RUNTIME=$(RUNTIME)b7
 
-UID := $$(id -u)
-GID := $$(id -g)
+UID := 522
+GID := 522
 
 PROTOC_VER ?= 3.6.1
 PROTOC_PLATFORM := linux-x86_64
