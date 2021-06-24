@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gravitational/teleport/api/constants"
+
 	"github.com/gogo/protobuf/proto"
 	"github.com/gravitational/trace"
 )
@@ -356,7 +358,12 @@ func (s *ServerV2) DeepCopy() Server {
 
 // IsAWSConsole returns true if this app is AWS management console.
 func (a *App) IsAWSConsole() bool {
-	return strings.Contains(a.URI, "console.aws.amazon.com")
+	return strings.HasPrefix(a.URI, constants.AWSConsoleURL)
+}
+
+// GetAWSAccountID returns value of label containing AWS account ID on this app.
+func (a *App) GetAWSAccountID() string {
+	return a.StaticLabels[constants.AWSAccountIDLabel]
 }
 
 // CommandLabel is a label that has a value as a result of the
