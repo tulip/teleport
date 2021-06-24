@@ -5464,9 +5464,9 @@ func TestTraitsPropagation(t *testing.T) {
 func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 	ctx := context.TODO()
 	const sessionID = "testsession"
-	teleport := suite.newTeleportInstance()
-
+	teleport := suite.newTeleport(t, nil, true)
 	defer teleport.StopAll()
+
 	api := teleport.GetSiteAPI(Site)
 	auditStream, err := api.CreateAuditStream(ctx, sessionID)
 	require.Nil(t, err)
