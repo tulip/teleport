@@ -5465,6 +5465,8 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 	ctx := context.TODO()
 	const sessionID = "testsession"
 	teleport := suite.newTeleport(t, nil, true)
+	adminRole := services.NewAdminRole()
+	teleport.AddUserWithRole(suite.me.Username, adminRole)
 	defer teleport.StopAll()
 
 	api := teleport.GetSiteAPI(Site)
