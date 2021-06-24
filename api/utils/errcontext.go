@@ -16,7 +16,10 @@ limitations under the License.
 
 package utils
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type ErrContext struct {
 	done <-chan struct{}
@@ -46,5 +49,51 @@ func (e *ErrContext) Err() error {
 }
 
 func (e *ErrContext) Value(key interface{}) interface{} {
+	return nil
+}
+
+type CancelWithErrContext struct {
+	parent context.Context
+	done   chan struct{}
+	err    error
+}
+
+func NewCancelWithErrContext(parent context.Context) (*CancelWithErrContext, func(error)) {
+	ctx := &CancelWithErrContext{
+		parent: parent,
+		done:   make(chan struct{}),
+		err:    nil,
+	}
+
+	go func() {
+		select {
+		case <-ctx.parent.Done():
+			ctx.err = ctx.parent.Err()
+			close(ctx.done)
+		case <-ctx.done:
+		}
+	}()
+
+	cancel := func(err error) {
+		ctx.err = err
+		close(ctx.done)
+	}
+
+	return ctx, cancel
+}
+
+func (e *CancelWithErrContext) Deadline() (deadline time.Time, ok bool) {
+	return time.Now(), true
+}
+
+func (e *CancelWithErrContext) Done() <-chan struct{} {
+	return e.done
+}
+
+func (e *CancelWithErrContext) Err() error {
+	return e.err
+}
+
+func (e *CancelWithErrContext) Value(key interface{}) interface{} {
 	return nil
 }
