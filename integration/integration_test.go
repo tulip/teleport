@@ -5495,8 +5495,8 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 			printEvent, ok := event.(*apievents.SessionPrint)
 			require.True(t, ok)
 			require.Equal(t, i, printEvent.ChunkIndex)
-		case err := <-ctx.Done():
-			require.Nil(t, err)
+		case <-ctx.Done():
+			require.Nil(t, ctx.Err())
 		case <-time.After(5 * time.Minute):
 			t.FailNow()
 		}
