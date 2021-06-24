@@ -549,7 +549,7 @@ func (a *fakeLog) SearchSessionEvents(fromUTC time.Time, toUTC time.Time, limit 
 	return nil, "", trace.NotFound("")
 }
 
-func (a *fakeLog) StreamSessionEvents(ctx context.Context, sessionID string) (context.Context, chan apievents.AuditEvent) {
+func (a *fakeLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent) {
 	return apiutils.NewErrContext(trace.NotImplemented("not implemented")), make(chan apievents.AuditEvent)
 }
 
