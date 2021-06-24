@@ -1342,7 +1342,7 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 			oneOf, err := stream.Recv()
 			if err != nil {
 				if err != io.EOF {
-					cancel(err)
+					cancel(trail.FromGRPC(err))
 				}
 
 				break outer
