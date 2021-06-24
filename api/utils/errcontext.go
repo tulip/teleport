@@ -21,6 +21,7 @@ import (
 	"time"
 )
 
+// ErrContext provides an instantly cancelled context with a user specified error.
 type ErrContext struct {
 	done <-chan struct{}
 	err  error
@@ -52,6 +53,7 @@ func (e *ErrContext) Value(key interface{}) interface{} {
 	return nil
 }
 
+// CancelWithErrContext behaves like context.CancelContext but allows a user provided error.
 type CancelWithErrContext struct {
 	parent context.Context
 	done   chan struct{}
