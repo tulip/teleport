@@ -5464,17 +5464,10 @@ func TestTraitsPropagation(t *testing.T) {
 func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 	ctx := context.TODO()
 	const sessionID = "testsession"
-	rc := NewInstance(InstanceConfig{
-		ClusterName: "example.com",
-		HostID:      uuid.New(),
-		NodeName:    Host,
-		Ports:       ports.PopIntSlice(6),
-		Priv:        suite.priv,
-		Pub:         suite.pub,
-		log:         testlog.FailureOnly(t),
-	})
+	teleport := suite.newTeleportInstance()
 
-	api := rc.GetSiteAPI(Site)
+	defer teleport.StopAll()
+	api := teleport.GetSiteAPI(Site)
 	auditStream, err := api.CreateAuditStream(ctx, sessionID)
 	require.Nil(t, err)
 
