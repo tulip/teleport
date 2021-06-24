@@ -5,14 +5,105 @@ description: How to configure Teleport Database Access with self-hosted MongoDB.
 
 # Self-Hosted MongoDB
 
-<Admonition type="note" title="Supported versions">
-  Teleport Database Access supports MongoDB 3.6 and higher. Older versions have
+In this guide you will:
+
+1. Install and configure Teleport for Database Access.
+2. Configure mutual TLS authentication between Teleport and your MongoDB cluster.
+3. Connect to your MongoDB instance via Teleport.
+
+## Prerequisites
+
+* Teleport version `v7.0` or newer.
+* MongoDB cluster (standalong or replica set) version `v3.6` or newer.
+
+<Admonition type="note">
+  Teleport Database Access supports MongoDB 3.6 and newer. Older versions have
   not been tested and are not guaranteed to work. MongoDB 3.6 was released in
   November 2017 and reached EOL in April 2021 so if you're still using an older
   version, consider upgrading.
 </Admonition>
 
-## Create certificate/key pair
+## Step 1/3. Install & configure Teleport
+
+### Setup Teleport Auth and Proxy services
+
+(!docs/pages/includes/database-access/start-auth-proxy.mdx!)
+
+### Setup Teleport Database service
+
+(!docs/pages/includes/database-access/token.mdx!)
+
+Start Teleport Database service:
+
+```bash
+$ teleport db start \
+   --token=/tmp/token \
+   --auth-server=teleport.example.com:3080 \
+   --name=example-mongo \
+   --protocol=mongodb \
+   --uri=mongo.example.com:27017 \
+   --labels=env=dev
+```
+
+Note that the `--auth-server` flag must point to the Teleport cluster's proxy
+endpoint because database service always connects back to the cluster over a
+reverse tunnel.
+
+You can specify either a single connection address or a MongoDB
+[connection string](https://docs.mongodb.com/manual/reference/connection-string/)
+as a URI. For example, when connecting to a replica set:
+
+```bash
+--uri="mongodb://mongo1.example.com:27017,mongo2.example.com:27017/?replicaSet=rs0"
+```
+
+By default, Teleport will connect to the primary replica set member. If you'd
+like to connect to a secondary instead, Teleport will respect `readPreference`
+connection string setting:
+
+```bash
+--uri="mongodb://mongo1.example.com:27017,mongo2.example.com:27017/?replicaSet=rs0&readPreference=secondary"
+```
+
+<Admonition type="tip">
+  You can start Database service using configuration file instead of CLI flags.
+  See [YAML reference](../reference/configuration.mdx).
+</Admonition>
+
+### Create Teleport user
+
+(!docs/pages/includes/database-access/create-user.mdx!)
+
+## Step 2/3. Configure MongoDB
+
+### Create MongoDB user
+
+Teleport will use [X.509 authentication](https://docs.mongodb.com/manual/tutorial/configure-x509-client-authentication/)
+when connecting toa MongoDB instance. Users authenticating with client certificates
+must be created in the `$external` MongoDB authentication database.
+
+MongoDB treats the entire `Subject` line of the client certificate as a username.
+When connecting to a MongoDB server, say as a user `alice`, Teleport will sign
+an ephemeral certificate with `CN=alice` subject.
+
+To create this user in the database, connect to it using `mongo` shell and run
+the following command:
+
+```js
+db.getSiblingDB("$external").runCommand(
+  {
+    createUser: "CN=alice",
+    roles: [
+      { role: "readWriteAnyDatabase", db: "admin" }
+    ]
+  }
+)
+```
+
+Update the [roles](https://docs.mongodb.com/manual/tutorial/manage-users-and-roles/)
+accordingly to grant the user appropriate database permissions.
+
+### Setup mutual TLS
 
 (!docs/pages/includes/database-access/tctl-auth-sign.mdx!)
 
@@ -57,39 +148,10 @@ Create the secrets:
   </TabItem>
 </Tabs>
 
-## Configure MongoDB users
+(!docs/pages/includes/database-access/rotation-note.mdx!)
 
-Users authenticating with client certificates must be created in the `$external`
-MongoDB authentication database.
-
-MongoDB treats the entire `Subject` line of the client certificate as a username.
-When connecting to a MongoDB server, say as a user `alice`, Teleport will sign
-an ephemeral certificate with `CN=alice` subject.
-
-To create this user in the database you can run the following `mongo` shell
-command:
-
-```js
-db.getSiblingDB("$external").runCommand(
-  {
-    createUser: "CN=alice",
-    roles: [
-      { role: "readWriteAnyDatabase", db: "admin" }
-    ]
-  }
-)
-```
-
-Update the [roles](https://docs.mongodb.com/manual/tutorial/manage-users-and-roles/)
-accordingly to grant the user appropriate database permissions.
-
-See [Use X.509 Certificates to Authenticate Clients](https://docs.mongodb.com/manual/tutorial/configure-x509-client-authentication/)
-in MongoDB documentation for more details.
-
-## Configure MongoDB TLS
-
-Add the following section to your `mongod.conf` configuration file to enable
-mutual TLS. Use the files generated above by the `tctl auth sign` command:
+Use the generated secrets to enable mutual TLS in your `mongod.conf` configuration
+file and restart the database:
 
 <Tabs>
   <TabItem label="MongoDB 3.6 - 4.2">
@@ -115,202 +177,34 @@ mutual TLS. Use the files generated above by the `tctl auth sign` command:
 When configuring a replica set, make sure to do it for each member and use
 secrets generated for the particular server.
 
-<Admonition type="note">
-  Once mutual TLS has been enabled, you will no longer be able to connect to
-  the cluster without providing a valid client certificate. You can use
-  `net.tls.allowConnectionsWithoutCertificates` setting to allow connections
-  from clients that do not present a certificate.
-</Admonition>
+Once mutual TLS has been enabled, you will no longer be able to connect to
+the cluster without providing a valid client certificate. You can use
+`net.tls.allowConnectionsWithoutCertificates` setting to allow connections
+from clients that do not present a certificate.
 
 See [Configure TLS/SSL](https://docs.mongodb.com/manual/tutorial/configure-ssl/)
 in MongoDB documentation for more details.
 
-## Setup Teleport Auth and Proxy services
+## Step 3/3. Connect
 
-Teleport Database Access for MongoDB is available starting from `7.0` release.
-
-(!docs/pages/includes/database-access/start-auth-proxy.mdx!)
-
-### Create user
-
-Create a local Teleport user with the built-in `access` role:
+Log into your Teleport cluster and see available databases:
 
 ```bash
-$ tctl users add --roles=access alice
-```
-
-The `access` role allows users to see all connected database servers, but
-database names and accounts are restricted to the user's `db_names` and
-`db_users` traits. Normally, these traits come from the identity provider. For
-the local user you've just created you can update them manually to allow it to
-connect to the `admin` database as a `alice` database user.
-
-First, export the user resource:
-
-```bash
-$ tctl get users/alice > alice.yaml
-```
-
-Update the resource to include the following traits:
-
-```yaml
-traits:
-  # Database account names the user will be allowed to use.
-  db_users:
-  - alice
-  # Database names the user will be allowed to connect to.
-  db_names:
-  - admin
-```
-
-Update the user:
-
-```bash
-$ tctl create alice.yaml -f
-```
-
-For more detailed information about database access controls see [RBAC](../rbac.mdx)
-documentation.
-
-### Start Database service with CLI flags
-
-For a quick try-out, Teleport database service doesn't require a configuration
-file and can be launched using a single CLI command:
-
-```bash
-$ teleport db start \
-   --token=/tmp/token \
-   --auth-server=teleport.example.com:3080 \
-   --name=example-mongo \
-   --protocol=mongodb \
-   --uri=mongo.example.com:27017 \
-   --labels=env=dev
-```
-
-Note that the `--auth-server` flag must point to the Teleport cluster's proxy
-endpoint because database service always connects back to the cluster over a
-reverse tunnel.
-
-### Start Database service with config file
-
-Below is an example of a database service configuration file that proxies
-a single self-hosted MongoDB database:
-
-```yaml
-teleport:
-  # The data_dir should be a different location if running on the same
-  # machine as Teleport auth and proxy.
-  data_dir: /var/lib/teleport-db
-  nodename: teleport-db-instance
-  # Teleport invitation token used to join a cluster.
-  # can also be passed on start using --token flag
-  auth_token: /tmp/token
-  # Proxy address to connect to. Note that it has to be the proxy address
-  # because database service always connects to the cluster over reverse
-  # tunnel.
-  auth_servers:
-  - teleport.example.com:3080
-db_service:
-  enabled: "yes"
-  # This section contains definitions of all databases proxied by this
-  # service, can contain multiple items.
-  databases:
-    # Name of the database proxy instance, used to reference in CLI.
-  - name: "example-mongo"
-    # Free-form description of the database proxy instance.
-    description: "Example MongoDB"
-    # Database protocol.
-    protocol: "mongodb"
-    # MongoDB endpoint address or connection string, see below for details.
-    uri: "mongodb://mongo.example.com:27017"
-    # Labels to assign to the database, used in RBAC.
-    static_labels:
-      env: dev
-auth_service:
-  enabled: "no"
-ssh_service:
-  enabled: "no"
-proxy_service:
-  enabled: "no"
-```
-
-<Admonition type="tip" title="Tip">
-  A single Teleport process can run multiple different services, for example
-  multiple database access proxies as well as running other services such an
-  SSH service or an application access proxy.
-</Admonition>
-
-Start the database service:
-
-```bash
-$ teleport start --config=/path/to/teleport-db.yaml --token=/tmp/token
-```
-
-## Standalone vs replica set
-
-You can specify either a single connection address as a MongoDB connection URI,
-or a [connection string](https://docs.mongodb.com/manual/reference/connection-string/).
-
-<Tabs>
-  <TabItem label="Standalone">
-  When connecting to a standalone MongoDB server, you can specify the server
-  endpoint:
-
-  ```yaml
-  uri: "mongo.example.com:27017"
-  ```
-
-  Connection string syntax is also accepted:
-
-  ```yaml
-  uri: "mongodb://localhost:27017"
-  ```
-  </TabItem>
-  <TabItem label="Replica set">
-  When connecting to a MongoDB replica set, specify the connection string as
-  a URI:
-
-  ```yaml
-  uri: "mongodb://mongo1.example.com:27017,mongo2.example.com:27017/?replicaSet=rs0"
-  ```
-
-  By default, Teleport will connect to the primary replica set member. If you'd
-  like to connect to a secondary instead, Teleport will respect `readPreference`
-  connection string setting:
-
-  ```yaml
-  uri: "mongodb://mongo1.example.com:27017,mongo2.example.com:27017/?replicaSet=rs0&readPreference=secondary"
-  ```
-
-  Note that if leader election is triggered during the session and the member
-  becomes primary, you won't be auto-reconnected.
-  </TabItem>
-</Tabs>
-
-## Connect
-
-Once the database service has joined the cluster, login to see the available
-databases:
-
-```bash
-$ tsh login --proxy=teleport.example.com:3080 --user=testuser
+$ tsh login --proxy=teleport.example.com:3080 --user=alice
 $ tsh db ls
 Name          Description     Labels
 ------------- --------------- --------
 example-mongo Example MongoDB env=dev
 ```
 
-Note that you will only be able to see databases your role has access to. See
-[RBAC](../rbac.mdx) section for more details.
-
-To connect to a particular database server, first retrieve credentials from
-Teleport using `tsh db login` command:
+To connect to a particular database instance, first retrieve its certificate
+using `tsh db login` command:
 
 ```bash
 $ tsh db login example-mongo
 ```
 
-<Admonition type="tip" title="Tip">
+<Admonition type="tip">
   You can be logged into multiple databases simultaneously.
 </Admonition>
 

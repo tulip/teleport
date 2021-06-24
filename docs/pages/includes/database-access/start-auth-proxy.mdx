@@ -1,14 +1,13 @@
-Download the appropriate version of Teleport for your platform from our
+Download the latest version of Teleport for your platform from our
 [downloads page](https://goteleport.com/teleport/download) and follow the
 installation [instructions](../../installation.mdx).
 
 Teleport requires a valid TLS certificate to operate and can fetch one automatically
-using Let's Encrypt [ACME](https://letsencrypt.org/how-it-works/) protocol.
+using Let's Encrypt [ACME](https://letsencrypt.org/how-it-works/) protocol. We
+will assume that you have configured DNS records for `teleport.example.com` and
+`*.teleport.example.com` to point to the Teleport node.
 
-We will assume that you have configured DNS records for `teleport.example.com`
-and `*.teleport.example.com` to point to the Teleport node.
-
-Let's generate a Teleport config with ACME enabled:
+Generate Teleport config with ACME enabled:
 
 ```bash
 $ teleport configure --cluster-name=teleport.example.com --acme --acme-email=alice@example.com -o file
@@ -21,15 +20,8 @@ $ teleport configure --cluster-name=teleport.example.com --acme --acme-email=ali
   be accessible on port `443`.
 </Admonition>
 
-Start the service:
+Start Teleport Auth and Proxy services:
 
 ```bash
 $ sudo teleport start
-```
-
-Generate a short-lived join token for the database service and save it for
-example in `/tmp/token`:
-
-```bash
-$ tctl tokens add --type=db
 ```
