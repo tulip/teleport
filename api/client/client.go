@@ -1331,7 +1331,8 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 	stream, err := c.grpc.StreamSessionEvents(ctx, request)
 	if err != nil {
 		close(ch)
-		return utils.NewErrContext(trace.Wrap(err)), ch
+		err := trace.Wrap(trail.FromGRPC(err))
+		return utils.NewErrContext(err), ch
 	}
 
 	subCtx, cancel := utils.NewCancelWithErrContext(ctx)

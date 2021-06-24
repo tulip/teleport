@@ -2701,15 +2701,15 @@ func (g *GRPCServer) StreamSessionEvents(req *proto.StreamSessionEventsRequest, 
 
 			oneOf, err := apievents.ToOneOf(event)
 			if err != nil {
-				return trace.Wrap(err)
+				return trail.ToGRPC(trace.Wrap(err))
 			}
 
 			if err := stream.Send(oneOf); err != nil {
-				return trace.Wrap(err)
+				return trail.ToGRPC(trace.Wrap(err))
 			}
 		case <-ctx.Done():
 			close(c)
-			return trace.Wrap(ctx.Err())
+			return trail.ToGRPC(trace.Wrap(ctx.Err()))
 		}
 	}
 }
