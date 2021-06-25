@@ -31,7 +31,6 @@ import (
 
 	"github.com/gravitational/teleport"
 	apidefaults "github.com/gravitational/teleport/api/defaults"
-	apiutils "github.com/gravitational/teleport/api/utils"
 	firestorebk "github.com/gravitational/teleport/lib/backend/firestore"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/events"
@@ -633,9 +632,11 @@ func (l *Log) purgeExpiredEvents() error {
 	}
 }
 
-// StreamSessionEvents streams all events from a given session recording. A subcontext
-// is created from the supplied context and is cancelled if the parent context gets cancelled
-// or the function encounters an error.
-func (l *Log) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent) {
-	return apiutils.NewErrContext(trace.NotImplemented("not implemented")), make(chan apievents.AuditEvent)
+// StreamSessionEvents streams all events from a given session recording. An error is returned on the first
+// channel if one is encountered. Otherwise it is simply closed when the stream ends.
+func (l *Log) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
+	e, c := make(chan error, 1), make(chan apievents.AuditEvent)
+	e <- trace.NotImplemented("not implemented")
+	close(c)
+	return e, c
 }

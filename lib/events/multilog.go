@@ -160,16 +160,18 @@ func (m *MultiLog) SearchSessionEvents(fromUTC, toUTC time.Time, limit int, star
 	return events, lastKey, err
 }
 
-// StreamSessionEvents streams all events from a given session recording. A subcontext
-// is created from the supplied context and is cancelled if the parent context gets cancelled
-// or the function encounters an error.
-func (m *MultiLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent) {
+// StreamSessionEvents streams all events from a given session recording. An error is returned on the first
+// channel if one is encountered. Otherwise it is simply closed when the stream ends.
+func (m *MultiLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
 	for _, log := range m.loggers {
-		ctx, c := log.StreamSessionEvents(ctx, sessionID, startIndex)
+		e, c := log.StreamSessionEvents(ctx, sessionID, startIndex)
 		if trace.IsNotImplemented(ctx.Err()) {
-			return ctx, c
+			return e, c
 		}
 	}
 
-	return ctx, make(chan apievents.AuditEvent)
+	e, c := make(chan error), make(chan apievents.AuditEvent)
+	close(e)
+	close(c)
+	return e, c
 }

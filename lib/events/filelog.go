@@ -32,7 +32,6 @@ import (
 
 	"github.com/gravitational/teleport"
 	apievents "github.com/gravitational/teleport/api/types/events"
-	apiutils "github.com/gravitational/teleport/api/utils"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/session"
 	"github.com/gravitational/teleport/lib/utils"
@@ -600,11 +599,14 @@ func (l *FileLog) findInFile(path string, eventFilter []string) ([]EventFields, 
 	return retval, nil
 }
 
-// StreamSessionEvents streams all events from a given session recording. A subcontext
-// is created from the supplied context and is cancelled if the parent context gets cancelled
-// or the function encounters an error.
-func (l *FileLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent) {
-	return apiutils.NewErrContext(trace.NotImplemented("not implemented")), make(chan apievents.AuditEvent)
+// StreamSessionEvents streams all events from a given session recording. An error is returned on the first
+// channel if one is encountered. Otherwise it is simply closed when the stream ends.
+func (l *FileLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
+	e := make(chan error, 1)
+	e <- trace.NotImplemented("not implemented")
+	c := make(chan apievents.AuditEvent)
+	close(c)
+	return e, c
 }
 
 type eventFile struct {

@@ -615,10 +615,9 @@ type IAuditLog interface {
 	// complete after calling Close method
 	WaitForDelivery(context.Context) error
 
-	// StreamSessionEvents streams all events from a given session recording. A subcontext
-	// is created from the supplied context and is cancelled if the parent context gets cancelled
-	// or the function encounters an error.
-	StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent)
+	// StreamSessionEvents streams all events from a given session recording. An error is returned on the first
+	// channel if one is encountered. Otherwise it is simply closed when the stream ends.
+	StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent)
 }
 
 // EventFields instance is attached to every logged event

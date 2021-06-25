@@ -1072,10 +1072,9 @@ func (c *chunkStream) Read(p []byte) (n int, err error) {
 	return written, nil
 }
 
-// StreamSessionEvents streams all events from a given session recording. A subcontext
-// is created from the supplied context and is cancelled if the parent context gets cancelled
-// or the function encounters an error.
-func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent) {
+// StreamSessionEvents streams all events from a given session recording. An error is returned on the first
+// channel if one is encountered. Otherwise it is simply closed when the stream ends.
+func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
 	l.log.Debugf("StreamSessionEvents(%v)", sessionID)
 
 	rawStream := &chunkStream{
@@ -1086,20 +1085,20 @@ func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID string, st
 	}
 
 	protoReader := NewProtoReader(rawStream)
+	e := make(chan error)
 	c := make(chan apievents.AuditEvent)
-	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
 		for {
 			if ctx.Err() != nil {
-				close(c)
+				e <- trace.Wrap(ctx.Err())
 				break
 			}
 
 			event, err := protoReader.Read(ctx)
 			if err != nil {
 				if err != io.EOF {
-					cancel()
+					e <- trace.Wrap(err)
 				}
 
 				close(c)
@@ -1112,7 +1111,7 @@ func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID string, st
 		}
 	}()
 
-	return ctx, c
+	return e, c
 }
 
 // getLocalLog returns the local (file based) audit log.
@@ -1310,8 +1309,9 @@ func (a *closedLogger) Close() error {
 	return trace.NotImplemented(loggerClosedMessage)
 }
 
-func (a *closedLogger) StreamSessionEvents(_ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent) {
-	ctx, cancel := context.WithTimeout(context.Background(), 0)
-	cancel()
-	return ctx, make(chan apievents.AuditEvent)
+func (a *closedLogger) StreamSessionEvents(_ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
+	e, c := make(chan error, 1), make(chan apievents.AuditEvent)
+	e <- trace.NotImplemented(loggerClosedMessage)
+	close(c)
+	return e, c
 }
