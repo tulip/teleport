@@ -617,7 +617,7 @@ type IAuditLog interface {
 
 	// StreamSessionEvents streams all events from a given session recording. An error is returned on the first
 	// channel if one is encountered. Otherwise it is simply closed when the stream ends.
-	StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan apievents.AuditEvent, chan error)
+	StreamSessionEvents(ctx context.Context, sessionID session.ID, startIndex int) (chan apievents.AuditEvent, chan error)
 }
 
 // EventFields instance is attached to every logged event

@@ -3069,7 +3069,7 @@ func (a *ServerWithRoles) SearchSessionEvents(fromUTC, toUTC time.Time, limit in
 
 // StreamSessionEvents streams all events from a given session recording. An error is returned on the first
 // channel if one is encountered. Otherwise it is simply closed when the stream ends.
-func (a *ServerWithRoles) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan apievents.AuditEvent, chan error) {
+func (a *ServerWithRoles) StreamSessionEvents(ctx context.Context, sessionID session.ID, startIndex int) (chan apievents.AuditEvent, chan error) {
 	if err := a.action(apidefaults.Namespace, types.KindSession, types.VerbList); err != nil {
 		e, c := make(chan error, 1), make(chan apievents.AuditEvent)
 		e <- trace.Wrap(err)

@@ -1449,8 +1449,8 @@ func (c *Client) GetSessionEvents(namespace string, sid session.ID, afterN int, 
 
 // StreamSessionEvents streams all events from a given session recording. An error is returned on the first
 // channel if one is encountered. Otherwise it is simply closed when the stream ends.
-func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan apievents.AuditEvent, chan error) {
-	return c.APIClient.StreamSessionEvents(ctx, sessionID, startIndex)
+func (c *Client) StreamSessionEvents(ctx context.Context, sessionID session.ID, startIndex int) (chan apievents.AuditEvent, chan error) {
+	return c.APIClient.StreamSessionEvents(ctx, string(sessionID), startIndex)
 }
 
 // SearchEvents allows searching for audit events with pagination support.

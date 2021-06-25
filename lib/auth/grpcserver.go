@@ -2690,7 +2690,7 @@ func (g *GRPCServer) StreamSessionEvents(req *proto.StreamSessionEventsRequest, 
 		return trace.Wrap(err)
 	}
 
-	c, e := auth.ServerWithRoles.StreamSessionEvents(stream.Context(), req.SessionID, int(req.StartIndex))
+	c, e := auth.ServerWithRoles.StreamSessionEvents(stream.Context(), session.ID(req.SessionID), int(req.StartIndex))
 
 	for {
 		select {
