@@ -5488,6 +5488,7 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 	require.Nil(t, err)
 	start := time.Now()
 
+retry:
 	for {
 		sessionPlayback, e := api.StreamSessionEvents(ctx, sessionID, 0)
 		startEvent := <-sessionPlayback
@@ -5505,7 +5506,7 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 			case err := <-e:
 				if time.Since(start) < time.Minute*5 {
 					time.Sleep(time.Second * 5)
-					continue
+					continue retry
 				}
 
 				t.Fatal(trace.Wrap(err))
