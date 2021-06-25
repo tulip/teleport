@@ -553,7 +553,7 @@ func (a *fakeLog) StreamSessionEvents(ctx context.Context, sessionID string, sta
 	e <- trace.NotImplemented("not implemented")
 	c := make(chan apievents.AuditEvent)
 	close(c)
-	return e, c
+	return c, e
 }
 
 func (a *fakeLog) WaitForDelivery(context.Context) error {
