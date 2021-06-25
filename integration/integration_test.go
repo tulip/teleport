@@ -5490,6 +5490,9 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 
 	for {
 		sessionPlayback, e := api.StreamSessionEvents(ctx, sessionID, 0)
+		startEvent := <-sessionPlayback
+		_, ok := startEvent.(*apievents.SessionStart)
+		require.True(t, ok)
 
 		for i := 0; i < 1000; i++ {
 			select {
