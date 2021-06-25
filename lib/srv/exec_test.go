@@ -548,7 +548,7 @@ func (a *fakeLog) SearchSessionEvents(fromUTC time.Time, toUTC time.Time, limit 
 	return nil, "", trace.NotFound("")
 }
 
-func (a *fakeLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan apievents.AuditEvent, chan error) {
+func (a *fakeLog) StreamSessionEvents(ctx context.Context, sessionID session.ID, startIndex int) (chan apievents.AuditEvent, chan error) {
 	e := make(chan error, 1)
 	e <- trace.NotImplemented("not implemented")
 	c := make(chan apievents.AuditEvent)
