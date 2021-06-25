@@ -1330,9 +1330,12 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 
 	stream, err := c.grpc.StreamSessionEvents(ctx, request)
 	if err != nil {
-		close(ch)
-		e := make(chan error, 1)
-		e <- trace.Wrap(trail.FromGRPC(err))
+		e := make(chan error)
+		go func() {
+			e <- trace.Wrap(err)
+			close(ch)
+		}()
+
 		return ch, e
 	}
 

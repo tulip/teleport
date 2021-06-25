@@ -1311,8 +1311,11 @@ func (a *closedLogger) Close() error {
 }
 
 func (a *closedLogger) StreamSessionEvents(_ctx context.Context, sessionID session.ID, startIndex int) (chan apievents.AuditEvent, chan error) {
-	e, c := make(chan error, 1), make(chan apievents.AuditEvent)
-	e <- trace.NotImplemented(loggerClosedMessage)
-	close(c)
+	c, e := make(chan apievents.AuditEvent), make(chan error)
+	go func() {
+		e <- trace.NotImplemented(loggerClosedMessage)
+		close(c)
+	}()
+
 	return c, e
 }
