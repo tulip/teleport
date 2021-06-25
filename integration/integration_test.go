@@ -5487,7 +5487,7 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 	err = auditStream.Complete(ctx)
 	require.Nil(t, err)
 
-	ctx, sessionPlayback := api.StreamSessionEvents(ctx, sessionID, 0)
+	e, sessionPlayback := api.StreamSessionEvents(ctx, sessionID, 0)
 
 	for i := 0; i < 1000; i++ {
 		select {
@@ -5497,6 +5497,8 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 			require.Equal(t, i, printEvent.ChunkIndex)
 		case <-ctx.Done():
 			require.Nil(t, ctx.Err())
+		case err := <-e:
+			t.Fatal(trace.Wrap(err))
 		case <-time.After(5 * time.Minute):
 			t.FailNow()
 		}
