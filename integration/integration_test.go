@@ -5486,21 +5486,31 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 
 	err = auditStream.Complete(ctx)
 	require.Nil(t, err)
+	start := time.Now()
 
-	sessionPlayback, e := api.StreamSessionEvents(ctx, sessionID, 0)
+	for {
+		sessionPlayback, e := api.StreamSessionEvents(ctx, sessionID, 0)
 
-	for i := 0; i < 1000; i++ {
-		select {
-		case event := <-sessionPlayback:
-			printEvent, ok := event.(*apievents.SessionPrint)
-			require.True(t, ok)
-			require.Equal(t, i, printEvent.ChunkIndex)
-		case <-ctx.Done():
-			require.Nil(t, ctx.Err())
-		case err := <-e:
-			t.Fatal(trace.Wrap(err))
-		case <-time.After(5 * time.Minute):
-			t.FailNow()
+		for i := 0; i < 1000; i++ {
+			select {
+			case event := <-sessionPlayback:
+				printEvent, ok := event.(*apievents.SessionPrint)
+				require.True(t, ok)
+				require.Equal(t, i, printEvent.ChunkIndex)
+			case <-ctx.Done():
+				require.Nil(t, ctx.Err())
+			case err := <-e:
+				if trace.IsNotFound(err) && time.Since(start) > time.Minute*5 {
+					time.Sleep(time.Second * 5)
+					continue
+				}
+
+				t.Fatal(trace.Wrap(err))
+			case <-time.After(5 * time.Minute):
+				t.FailNow()
+			}
 		}
+
+		break
 	}
 }
