@@ -5462,7 +5462,7 @@ func TestTraitsPropagation(t *testing.T) {
 
 // testSessionStreaming tests streaming events from session recordings.
 func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
-	ctx := context.TODO()
+	ctx := context.Background()
 	sessionID := session.ID(uuid.New())
 	teleport := suite.newTeleport(t, nil, true)
 	defer teleport.StopAll()
