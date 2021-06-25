@@ -5500,7 +5500,7 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 			case <-ctx.Done():
 				require.Nil(t, ctx.Err())
 			case err := <-e:
-				if trace.IsNotFound(err) && time.Since(start) < time.Minute*5 {
+				if time.Since(start) < time.Minute*5 {
 					time.Sleep(time.Second * 5)
 					continue
 				}
