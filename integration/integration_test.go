@@ -168,48 +168,48 @@ func (s *integrationTestSuite) newTeleportWithConfig(t *testing.T, logins []stri
 func TestIntegrations(t *testing.T) {
 	suite := newSuite(t)
 
-	t.Run("AuditOff", suite.bind(testAuditOff))
-	t.Run("AuditOn", suite.bind(testAuditOn))
-	t.Run("BPFExec", suite.bind(testBPFExec))
-	t.Run("BPFInteractive", suite.bind(testBPFInteractive))
-	t.Run("BPFSessionDifferentiation", suite.bind(testBPFSessionDifferentiation))
-	t.Run("CmdLabels", suite.bind(testCmdLabels))
-	t.Run("ControlMaster", suite.bind(testControlMaster))
-	t.Run("CustomReverseTunnel", suite.bind(testCustomReverseTunnel))
-	t.Run("DataTransfer", suite.bind(testDataTransfer))
-	t.Run("Disconnection", suite.bind(testDisconnectScenarios))
-	t.Run("Discovery", suite.bind(testDiscovery))
-	t.Run("DiscoveryNode", suite.bind(testDiscoveryNode))
-	t.Run("DiscoveryRecovers", suite.bind(testDiscoveryRecovers))
-	t.Run("EnvironmentVars", suite.bind(testEnvironmentVariables))
-	t.Run("ExecEvents", suite.bind(testExecEvents))
-	t.Run("ExternalClient", suite.bind(testExternalClient))
-	t.Run("HA", suite.bind(testHA))
-	t.Run("Interactive (Regular)", suite.bind(testInteractiveRegular))
-	t.Run("Interactive (Reverse Tunnel)", suite.bind(testInteractiveReverseTunnel))
-	t.Run("Interoperability", suite.bind(testInteroperability))
-	t.Run("InvalidLogin", suite.bind(testInvalidLogins))
-	t.Run("JumpTrustedClusters", suite.bind(testJumpTrustedClusters))
-	t.Run("JumpTrustedClustersWithLabels", suite.bind(testJumpTrustedClustersWithLabels))
-	t.Run("List", suite.bind(testList))
-	t.Run("MapRoles", suite.bind(testMapRoles))
-	t.Run("MultiplexingTrustedClusters", suite.bind(testMultiplexingTrustedClusters))
-	t.Run("PAM", suite.bind(testPAM))
-	t.Run("PortForwarding", suite.bind(testPortForwarding))
-	t.Run("ProxyHostKeyCheck", suite.bind(testProxyHostKeyCheck))
-	t.Run("RotateChangeSigningAlg", suite.bind(testRotateChangeSigningAlg))
-	t.Run("RotateRollback", suite.bind(testRotateRollback))
-	t.Run("RotateSuccess", suite.bind(testRotateSuccess))
-	t.Run("RotateTrustedClusters", suite.bind(testRotateTrustedClusters))
-	t.Run("SessionStartContainsAccessRequest", suite.bind(testSessionStartContainsAccessRequest))
-	t.Run("Shutdown", suite.bind(testShutdown))
-	t.Run("TrustedClusters", suite.bind(testTrustedClusters))
-	t.Run("TrustedClustersWithLabels", suite.bind(testTrustedClustersWithLabels))
-	t.Run("TrustedTunnelNode", suite.bind(testTrustedTunnelNode))
-	t.Run("TwoClustersProxy", suite.bind(testTwoClustersProxy))
-	t.Run("TwoClustersTunnel", suite.bind(testTwoClustersTunnel))
-	t.Run("UUIDBasedProxy", suite.bind(testUUIDBasedProxy))
-	t.Run("WindowChange", suite.bind(testWindowChange))
+	//t.Run("AuditOff", suite.bind(testAuditOff))
+	//t.Run("AuditOn", suite.bind(testAuditOn))
+	//t.Run("BPFExec", suite.bind(testBPFExec))
+	//t.Run("BPFInteractive", suite.bind(testBPFInteractive))
+	//t.Run("BPFSessionDifferentiation", suite.bind(testBPFSessionDifferentiation))
+	//t.Run("CmdLabels", suite.bind(testCmdLabels))
+	//t.Run("ControlMaster", suite.bind(testControlMaster))
+	//t.Run("CustomReverseTunnel", suite.bind(testCustomReverseTunnel))
+	//t.Run("DataTransfer", suite.bind(testDataTransfer))
+	//t.Run("Disconnection", suite.bind(testDisconnectScenarios))
+	//t.Run("Discovery", suite.bind(testDiscovery))
+	//t.Run("DiscoveryNode", suite.bind(testDiscoveryNode))
+	//t.Run("DiscoveryRecovers", suite.bind(testDiscoveryRecovers))
+	//t.Run("EnvironmentVars", suite.bind(testEnvironmentVariables))
+	//t.Run("ExecEvents", suite.bind(testExecEvents))
+	//t.Run("ExternalClient", suite.bind(testExternalClient))
+	//t.Run("HA", suite.bind(testHA))
+	//t.Run("Interactive (Regular)", suite.bind(testInteractiveRegular))
+	//t.Run("Interactive (Reverse Tunnel)", suite.bind(testInteractiveReverseTunnel))
+	//t.Run("Interoperability", suite.bind(testInteroperability))
+	//t.Run("InvalidLogin", suite.bind(testInvalidLogins))
+	//t.Run("JumpTrustedClusters", suite.bind(testJumpTrustedClusters))
+	//t.Run("JumpTrustedClustersWithLabels", suite.bind(testJumpTrustedClustersWithLabels))
+	//t.Run("List", suite.bind(testList))
+	//t.Run("MapRoles", suite.bind(testMapRoles))
+	//t.Run("MultiplexingTrustedClusters", suite.bind(testMultiplexingTrustedClusters))
+	//t.Run("PAM", suite.bind(testPAM))
+	//t.Run("PortForwarding", suite.bind(testPortForwarding))
+	//t.Run("ProxyHostKeyCheck", suite.bind(testProxyHostKeyCheck))
+	//t.Run("RotateChangeSigningAlg", suite.bind(testRotateChangeSigningAlg))
+	//t.Run("RotateRollback", suite.bind(testRotateRollback))
+	//t.Run("RotateSuccess", suite.bind(testRotateSuccess))
+	//t.Run("RotateTrustedClusters", suite.bind(testRotateTrustedClusters))
+	//t.Run("SessionStartContainsAccessRequest", suite.bind(testSessionStartContainsAccessRequest))
+	//t.Run("Shutdown", suite.bind(testShutdown))
+	//t.Run("TrustedClusters", suite.bind(testTrustedClusters))
+	//t.Run("TrustedClustersWithLabels", suite.bind(testTrustedClustersWithLabels))
+	//t.Run("TrustedTunnelNode", suite.bind(testTrustedTunnelNode))
+	//t.Run("TwoClustersProxy", suite.bind(testTwoClustersProxy))
+	//t.Run("TwoClustersTunnel", suite.bind(testTwoClustersTunnel))
+	//t.Run("UUIDBasedProxy", suite.bind(testUUIDBasedProxy))
+	//t.Run("WindowChange", suite.bind(testWindowChange))
 	t.Run("SessionStreaming", suite.bind(testSessionStreaming))
 }
 
@@ -5491,9 +5491,19 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 retry:
 	for {
 		sessionPlayback, e := api.StreamSessionEvents(ctx, sessionID, 0)
-		startEvent := <-sessionPlayback
-		_, ok := startEvent.(*apievents.SessionStart)
-		require.True(t, ok)
+
+		select {
+		case startEvent := <-sessionPlayback:
+			_, ok := startEvent.(*apievents.SessionStart)
+			require.True(t, ok, "%T", startEvent)
+		case err := <-e:
+			if trace.IsNotFound(err) && time.Since(start) < time.Minute*5 {
+				time.Sleep(time.Second * 5)
+				continue retry
+			}
+
+			require.Nil(t, err)
+		}
 
 		for i := 0; i < 1000; i++ {
 			select {
@@ -5504,13 +5514,13 @@ retry:
 			case <-ctx.Done():
 				require.Nil(t, ctx.Err())
 			case err := <-e:
-				if time.Since(start) < time.Minute*5 {
+				if trace.IsNotFound(err) && time.Since(start) < time.Minute*5 {
 					time.Sleep(time.Second * 5)
 					continue retry
 				}
 
-				t.Fatal(trace.Wrap(err))
-			case <-time.After(5 * time.Minute):
+				require.Nil(t, err)
+			case <-time.After(time.Minute * 5):
 				t.FailNow()
 			}
 		}
