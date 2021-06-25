@@ -549,8 +549,12 @@ func (a *fakeLog) SearchSessionEvents(fromUTC time.Time, toUTC time.Time, limit 
 	return nil, "", trace.NotFound("")
 }
 
-func (a *fakeLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (context.Context, chan apievents.AuditEvent) {
-	return apiutils.NewErrContext(trace.NotImplemented("not implemented")), make(chan apievents.AuditEvent)
+func (a *fakeLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
+	e := make(chan error, 1)
+	e <- trace.NotImplemented("not implemented")
+	c := make(chan apievents.AuditEvent)
+	close(c)
+	return e, c
 }
 
 func (a *fakeLog) WaitForDelivery(context.Context) error {
