@@ -23,7 +23,6 @@ import (
 	"crypto/x509/pkix"
 	"fmt"
 	"io"
-	"net/http"
 	"time"
 
 	"github.com/gravitational/teleport/api/client/proto"
@@ -39,7 +38,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/rds/rdsutils"
 	"github.com/aws/aws-sdk-go/service/redshift"
 
-	"google.golang.org/api/googleapi"
 	sqladmin "google.golang.org/api/sqladmin/v1beta4"
 	gcpcredentialspb "google.golang.org/genproto/googleapis/iam/credentials/v1"
 
@@ -119,11 +117,20 @@ func (a *dbAuth) GetRDSAuthToken(sessionCtx *Session) (string, error) {
 		return "", trace.Wrap(err)
 	}
 	a.cfg.Log.Debugf("Generating RDS auth token for %s.", sessionCtx)
-	return rdsutils.BuildAuthToken(
+	token, err := rdsutils.BuildAuthToken(
 		sessionCtx.Server.GetURI(),
 		sessionCtx.Server.GetAWS().Region,
 		sessionCtx.DatabaseUser,
 		awsSession.Config.Credentials)
+	if err != nil {
+		return "", trace.AccessDenied(`Failed to generate RDS IAM auth token due to the following error:
+
+  %v
+
+Please make sure this database service has proper AWS credentials or IAM role.
+`, err)
+	}
+	return token, nil
 }
 
 // GetRedshiftAuthToken returns authorization token that will be used as a
@@ -146,7 +153,22 @@ func (a *dbAuth) GetRedshiftAuthToken(sessionCtx *Session) (string, string, erro
 		DbGroups: []*string{},
 	})
 	if err != nil {
-		return "", "", trace.Wrap(err)
+		if trace.IsAccessDenied(ConvertError(err)) {
+			return "", "", trace.AccessDenied(`Failed to generate Redshift IAM auth token due to a permissions error:
+
+  %v
+
+Please make sure this database service has IAM policy attached that allows it to generate Redshift credentials:
+
+%v
+`, err, GetRedshiftPolicy())
+		}
+		return "", "", trace.AccessDenied(`Failed to generate Redshift IAM auth token due to the following error:
+
+  %v
+
+Please make sure this database service has proper AWS credentials or IAM role.
+`, err)
 	}
 	return *resp.DbUser, *resp.DbPassword, nil
 }
@@ -178,6 +200,15 @@ func (a *dbAuth) GetCloudSQLAuthToken(ctx context.Context, sessionCtx *Session) 
 			},
 		})
 	if err != nil {
+		if trace.IsAccessDenied(ConvertError(err)) {
+			return "", trace.AccessDenied(`Failed to generate GCP IAM auth token due a permissions error:
+
+  %v
+
+Please make sure this database service has "Service Account Token Creator" GCP
+IAM role or "iam.serviceAccounts.getAccessToken" IAM permission.
+`, err)
+		}
 		return "", trace.Wrap(err)
 	}
 	return resp.AccessToken, nil
@@ -211,7 +242,7 @@ func (a *dbAuth) GetCloudSQLPassword(ctx context.Context, sessionCtx *Session) (
 		err := a.updateCloudSQLUser(ctx, sessionCtx, gcpCloudSQL, &sqladmin.User{
 			Password: token,
 		})
-		if err != nil && !isStatusConflictError(err) { // We only want to retry on 409.
+		if err != nil && !trace.IsCompareFailed(ConvertError(err)) { // We only want to retry on 409.
 			return utils.PermanentRetryError(err)
 		}
 		return trace.Wrap(err)
@@ -222,18 +253,25 @@ func (a *dbAuth) GetCloudSQLPassword(ctx context.Context, sessionCtx *Session) (
 	return token, nil
 }
 
-func isStatusConflictError(err error) bool {
-	e, ok := trace.Unwrap(err).(*googleapi.Error)
-	return ok && e.Code == http.StatusConflict
-}
-
 // updateCloudSQLUser makes a request to Cloud SQL API to update the provided user.
 func (a *dbAuth) updateCloudSQLUser(ctx context.Context, sessionCtx *Session, gcpCloudSQL *sqladmin.Service, user *sqladmin.User) error {
 	_, err := gcpCloudSQL.Users.Update(
 		sessionCtx.Server.GetGCP().ProjectID,
 		sessionCtx.Server.GetGCP().InstanceID,
 		user).Name(sessionCtx.DatabaseUser).Host("%").Context(ctx).Do()
-	return trace.Wrap(err)
+	if err != nil {
+		if trace.IsAccessDenied(ConvertError(err)) {
+			return trace.AccessDenied(`Failed to update password for Cloud SQL user %q due to the following error:
+
+  %v
+
+Please make sure this database service has "Cloud SQL Admin" GCP IAM role, or
+"cloudsql.users.update" IAM permission.
+`, sessionCtx.DatabaseUser, err)
+		}
+		return trace.Wrap(err)
+	}
+	return nil
 }
 
 // GetTLSConfig builds the client TLS configuration for the session.
