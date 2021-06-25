@@ -1092,6 +1092,7 @@ func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID string, st
 		for {
 			if ctx.Err() != nil {
 				e <- trace.Wrap(ctx.Err())
+				close(c)
 				break
 			}
 

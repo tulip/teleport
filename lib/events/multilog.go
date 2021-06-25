@@ -171,7 +171,6 @@ func (m *MultiLog) StreamSessionEvents(ctx context.Context, sessionID string, st
 	}
 
 	e, c := make(chan error), make(chan apievents.AuditEvent)
-	close(e)
 	close(c)
 	return e, c
 }

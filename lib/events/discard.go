@@ -66,7 +66,6 @@ func (d *DiscardAuditLog) EmitAuditEvent(ctx context.Context, event apievents.Au
 }
 func (d *DiscardAuditLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
 	e, c := make(chan error), make(chan apievents.AuditEvent)
-	close(e)
 	close(c)
 	return e, c
 }
