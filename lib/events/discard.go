@@ -64,8 +64,8 @@ func (d *DiscardAuditLog) UploadSessionRecording(SessionRecording) error {
 func (d *DiscardAuditLog) EmitAuditEvent(ctx context.Context, event apievents.AuditEvent) error {
 	return nil
 }
-func (d *DiscardAuditLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
+func (d *DiscardAuditLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan apievents.AuditEvent, chan error) {
 	e, c := make(chan error), make(chan apievents.AuditEvent)
 	close(c)
-	return e, c
+	return c, e
 }

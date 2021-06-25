@@ -162,7 +162,7 @@ func (m *MultiLog) SearchSessionEvents(fromUTC, toUTC time.Time, limit int, star
 
 // StreamSessionEvents streams all events from a given session recording. An error is returned on the first
 // channel if one is encountered. Otherwise it is simply closed when the stream ends.
-func (m *MultiLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
+func (m *MultiLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan apievents.AuditEvent, chan error) {
 	for _, log := range m.loggers {
 		e, c := log.StreamSessionEvents(ctx, sessionID, startIndex)
 		if trace.IsNotImplemented(ctx.Err()) {
@@ -172,5 +172,5 @@ func (m *MultiLog) StreamSessionEvents(ctx context.Context, sessionID string, st
 
 	e, c := make(chan error), make(chan apievents.AuditEvent)
 	close(c)
-	return e, c
+	return c, e
 }

@@ -1449,7 +1449,7 @@ func (c *Client) GetSessionEvents(namespace string, sid session.ID, afterN int, 
 
 // StreamSessionEvents streams all events from a given session recording. An error is returned on the first
 // channel if one is encountered. Otherwise it is simply closed when the stream ends.
-func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
+func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan apievents.AuditEvent, chan error) {
 	return c.APIClient.StreamSessionEvents(ctx, sessionID, startIndex)
 }
 

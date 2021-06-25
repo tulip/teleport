@@ -1320,7 +1320,7 @@ func (c *Client) DeleteAllNodes(ctx context.Context, namespace string) error {
 }
 
 // StreamSessionEvents streams audit events from a given session recording.
-func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan events.AuditEvent) {
+func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan events.AuditEvent, chan error) {
 	request := &proto.StreamSessionEventsRequest{
 		SessionID:  sessionID,
 		StartIndex: int32(startIndex),
@@ -1333,7 +1333,7 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 		close(ch)
 		e := make(chan error, 1)
 		e <- trace.Wrap(trail.FromGRPC(err))
-		return e, ch
+		return ch, e
 	}
 
 	e := make(chan error)
@@ -1362,7 +1362,7 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 		close(ch)
 	}()
 
-	return e, ch
+	return ch, e
 }
 
 // SearchEvents allows searching for events with a full pagination support.

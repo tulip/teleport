@@ -1074,7 +1074,7 @@ func (c *chunkStream) Read(p []byte) (n int, err error) {
 
 // StreamSessionEvents streams all events from a given session recording. An error is returned on the first
 // channel if one is encountered. Otherwise it is simply closed when the stream ends.
-func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
+func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID string, startIndex int) (chan apievents.AuditEvent, chan error) {
 	l.log.Debugf("StreamSessionEvents(%v)", sessionID)
 
 	rawStream := &chunkStream{
@@ -1112,7 +1112,7 @@ func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID string, st
 		}
 	}()
 
-	return e, c
+	return c, e
 }
 
 // getLocalLog returns the local (file based) audit log.
@@ -1310,9 +1310,9 @@ func (a *closedLogger) Close() error {
 	return trace.NotImplemented(loggerClosedMessage)
 }
 
-func (a *closedLogger) StreamSessionEvents(_ctx context.Context, sessionID string, startIndex int) (chan error, chan apievents.AuditEvent) {
+func (a *closedLogger) StreamSessionEvents(_ctx context.Context, sessionID string, startIndex int) (chan apievents.AuditEvent, chan error) {
 	e, c := make(chan error, 1), make(chan apievents.AuditEvent)
 	e <- trace.NotImplemented(loggerClosedMessage)
 	close(c)
-	return e, c
+	return c, e
 }
