@@ -3,12 +3,14 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
+	"fmt"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/gravitational/trace"
 
 	"github.com/gravitational/teleport"
+	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/constants"
 	"github.com/gravitational/teleport/api/types"
 	apievents "github.com/gravitational/teleport/api/types/events"
@@ -37,11 +39,28 @@ type ChangePasswordWithTokenRequest struct {
 	U2FRegisterResponse *u2f.RegisterChallengeResponse `json:"u2f_register_response,omitempty"`
 }
 
-// ChangePasswordWithToken changes password with token
-func (s *Server) ChangePasswordWithToken(ctx context.Context, req ChangePasswordWithTokenRequest) (types.WebSession, error) {
+// ChangePasswordWithToken changes password with a password reset token.
+func (s *Server) ChangePasswordWithToken(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (*types.ChangePasswordWithTokenResponse, error) {
 	user, err := s.changePasswordWithToken(ctx, req)
 	if err != nil {
 		return nil, trace.Wrap(err)
+	}
+
+	// Only cloud accounts with 2nd factor's gets recovery codes.
+	var recoveryCodes []string
+	recoveryAllowed := true
+	if err := s.isAccountRecoveryAllowed(ctx); err != nil {
+		if !trace.IsAccessDenied(err) {
+			return nil, trace.Wrap(err)
+		}
+		recoveryAllowed = false
+	}
+
+	if recoveryAllowed && (req.SecondFactorToken != "" || req.U2FRegisterResponse != nil) {
+		recoveryCodes, err = s.generateAndUpsertRecoveryCodes(ctx, user.GetName())
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
 	}
 
 	sess, err := s.createUserWebSession(ctx, user)
@@ -49,7 +68,10 @@ func (s *Server) ChangePasswordWithToken(ctx context.Context, req ChangePassword
 		return nil, trace.Wrap(err)
 	}
 
-	return sess, nil
+	return &types.ChangePasswordWithTokenResponse{
+		WebSession:    sess,
+		RecoveryCodes: recoveryCodes,
+	}, nil
 }
 
 // ResetPassword securely generates a new random password and assigns it to user.
@@ -348,7 +370,7 @@ func (s *Server) getOTPType(user string) (teleport.OTPType, error) {
 	return teleport.HOTP, nil
 }
 
-func (s *Server) changePasswordWithToken(ctx context.Context, req ChangePasswordWithTokenRequest) (types.User, error) {
+func (s *Server) changePasswordWithToken(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (types.User, error) {
 	// Get cluster configuration and check if local auth is allowed.
 	authPref, err := s.GetAuthPreference(ctx)
 	if err != nil {
@@ -365,6 +387,7 @@ func (s *Server) changePasswordWithToken(ctx context.Context, req ChangePassword
 
 	// Check if token exists.
 	token, err := s.GetResetPasswordToken(ctx, req.TokenID)
+	fmt.Println("------ here? ", err)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -400,7 +423,7 @@ func (s *Server) changePasswordWithToken(ctx context.Context, req ChangePassword
 	return user, nil
 }
 
-func (s *Server) changeUserSecondFactor(req ChangePasswordWithTokenRequest, token types.ResetPasswordToken) error {
+func (s *Server) changeUserSecondFactor(req *proto.ChangeUserAuthCredWithTokenRequest, token types.ResetPasswordToken) error {
 	ctx := context.TODO()
 	username := token.GetUser()
 	cap, err := s.GetAuthPreference(ctx)
@@ -447,10 +470,13 @@ func (s *Server) changeUserSecondFactor(req ChangePasswordWithTokenRequest, toke
 			DevName:                "u2f",
 			ChallengeStorageKey:    req.TokenID,
 			RegistrationStorageKey: username,
-			Resp:                   *req.U2FRegisterResponse,
-			Storage:                s.Identity,
-			Clock:                  s.GetClock(),
-			AttestationCAs:         cfg.DeviceAttestationCAs,
+			Resp: u2f.RegisterChallengeResponse{
+				RegistrationData: req.GetU2FRegisterResponse().GetRegistrationData(),
+				ClientData:       req.GetU2FRegisterResponse().GetClientData(),
+			},
+			Storage:        s.Identity,
+			Clock:          s.GetClock(),
+			AttestationCAs: cfg.DeviceAttestationCAs,
 		})
 		return trace.Wrap(err)
 	}

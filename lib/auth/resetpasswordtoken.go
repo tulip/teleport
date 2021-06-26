@@ -37,13 +37,6 @@ import (
 	"github.com/pquerna/otp/totp"
 )
 
-const (
-	// ResetPasswordTokenTypeInvite indicates invite UI flow
-	ResetPasswordTokenTypeInvite = "invite"
-	// ResetPasswordTokenTypePassword indicates set new password UI flow
-	ResetPasswordTokenTypePassword = "password"
-)
-
 // CreateResetPasswordTokenRequest is a request to create a new reset password token
 type CreateResetPasswordTokenRequest struct {
 	// Name is the user name to reset.
@@ -64,14 +57,14 @@ func (r *CreateResetPasswordTokenRequest) CheckAndSetDefaults() error {
 	}
 
 	if r.Type == "" {
-		r.Type = ResetPasswordTokenTypePassword
+		r.Type = types.ResetPasswordTokenPassword
 	}
 
 	// We use the same mechanism to handle invites and password resets
 	// as both allow setting up a new password based on auth preferences.
 	// The only difference is default TTL values and URLs to web UI.
 	switch r.Type {
-	case ResetPasswordTokenTypeInvite:
+	case types.ResetPasswordTokenInvite:
 		if r.TTL == 0 {
 			r.TTL = defaults.SignupTokenTTL
 		}
@@ -81,7 +74,7 @@ func (r *CreateResetPasswordTokenRequest) CheckAndSetDefaults() error {
 				"failed to create user invite token: maximum token TTL is %v hours",
 				defaults.MaxSignupTokenTTL)
 		}
-	case ResetPasswordTokenTypePassword:
+	case types.ResetPasswordTokenPassword:
 		if r.TTL == 0 {
 			r.TTL = defaults.ChangePasswordTokenTTL
 		}
@@ -90,6 +83,9 @@ func (r *CreateResetPasswordTokenRequest) CheckAndSetDefaults() error {
 				"failed to create reset password token: maximum token TTL is %v hours",
 				defaults.MaxChangePasswordTokenTTL)
 		}
+	case types.ResetPasswordTokenRecoveryStart, types.ResetPasswordTokenRecoveryApproved:
+		r.TTL = types.MaxRecoveryTokenTTL
+
 	default:
 		return trace.BadParameter("unknown reset password token request type(%v)", r.Type)
 	}
@@ -278,7 +274,12 @@ func (s *Server) newResetPasswordToken(req CreateResetPasswordTokenRequest) (typ
 	var err error
 	var proxyHost string
 
-	tokenID, err := utils.CryptoRandomHex(TokenLenBytes)
+	tokenLenBytes := TokenLenBytes
+	if req.Type == types.ResetPasswordTokenRecoveryStart || req.Type == types.ResetPasswordTokenRecoveryApproved {
+		tokenLenBytes = types.RecoveryTokenLenBytes
+	}
+
+	tokenID, err := utils.CryptoRandomHex(tokenLenBytes)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -321,11 +322,13 @@ func formatResetPasswordTokenURL(proxyHost string, tokenID string, reqType strin
 		Host:   proxyHost,
 	}
 
-	// We have 2 different UI flows to process password reset tokens
-	if reqType == ResetPasswordTokenTypeInvite {
+	// We have 3 different UI flows to process password reset tokens
+	if reqType == types.ResetPasswordTokenInvite {
 		u.Path = fmt.Sprintf("/web/invite/%v", tokenID)
-	} else if reqType == ResetPasswordTokenTypePassword {
+	} else if reqType == types.ResetPasswordTokenPassword {
 		u.Path = fmt.Sprintf("/web/reset/%v", tokenID)
+	} else if reqType == types.ResetPasswordTokenRecoveryStart || reqType == types.ResetPasswordTokenRecoveryApproved {
+		u.Path = fmt.Sprintf("/web/recovery/%v", tokenID)
 	}
 
 	return u.String(), nil

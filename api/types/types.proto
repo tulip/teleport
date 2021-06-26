@@ -844,6 +844,9 @@ message ResetPasswordTokenV3 {
     // Spec is an ResetPasswordToken specification
     ResetPasswordTokenSpecV3 Spec = 5
         [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "spec" ];
+    // AuthAttempts is the number of times a user failed to provide a valid password or second
+    // factor for account recovery.
+    int32 AuthAttempts = 6 [ (gogoproto.jsontag) = "auth_attempts,omitempty" ];
 }
 
 message ResetPasswordTokenSpecV3 {
@@ -1526,6 +1529,14 @@ message LoginStatus {
         (gogoproto.stdtime) = true,
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "lock_expires,omitempty"
+    ];
+    // RecoveryAttemptLockExpires contains the time when this lock will expire
+    // from maxed failed recovery attempts. This field is used to determine
+    // if a user got locked from recovery attempts.
+    google.protobuf.Timestamp RecoveryAttemptLockExpires = 5 [
+        (gogoproto.stdtime) = true,
+        (gogoproto.nullable) = false,
+        (gogoproto.jsontag) = "recovery_attempt_lock_expires,omitempty"
     ];
 }
 
@@ -2238,4 +2249,25 @@ message LockTarget {
 
     // MFADevice specifies the UUID of a user MFA device.
     string MFADevice = 6 [ (gogoproto.jsontag) = "mfa_device,omitempty" ];
+}
+
+// RecoveryCodes holds a user's recovery code information.
+message RecoveryCodes {
+    // Kind describes the kind of resource.
+    string Kind = 1;
+    // Version is resource version.
+    string Version = 2;
+    // Codes hold a list of recovery codes.
+    repeated RecoveryCode Codes = 3 [ (gogoproto.nullable) = false ];
+    // Created is when the recovery codes were generated.
+    google.protobuf.Timestamp Created = 4
+        [ (gogoproto.stdtime) = true, (gogoproto.nullable) = false ];
+}
+
+// RecoveryCode describes a recovery code.
+message RecoveryCode {
+    // Value is the recovery code value.
+    bytes Value = 1;
+    // IsUsed determines if the recovery code was used.
+    bool IsUsed = 2;
 }

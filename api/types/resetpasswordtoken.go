@@ -23,6 +23,17 @@ import (
 	"github.com/gravitational/trace"
 )
 
+const (
+	// ResetPasswordTokenInvite indicates invite UI flow.
+	ResetPasswordTokenInvite = "invite"
+	// ResetPasswordTokenPassword indicates set new password UI flow.
+	ResetPasswordTokenPassword = "password"
+	// ResetPasswordTokenRecoveryStart indicates start recovery UI flow.
+	ResetPasswordTokenRecoveryStart = "recovery_start"
+	// ResetPasswordTokenRecoveryApproved indicates recover new password or second factor UI flow.
+	ResetPasswordTokenRecoveryApproved = "recovery_approved"
+)
+
 // ResetPasswordToken represents a temporary token used to reset passwords
 type ResetPasswordToken interface {
 	// Resource provides common resource properties
@@ -39,6 +50,12 @@ type ResetPasswordToken interface {
 	GetURL() string
 	// SetURL returns URL
 	SetURL(string)
+	// IncrementAuthAttempt increases the attempt counter by 1.
+	IncrementAuthAttempt()
+	// GetAuthAttempts returns number of failed auth attempts.
+	GetAuthAttempts() int32
+	// CheckSubKindType checks if given token type matches with the subkind.
+	CheckSubKindType(tokenType string) error
 }
 
 // NewResetPasswordToken creates an instance of ResetPasswordToken.
@@ -146,7 +163,7 @@ func (u *ResetPasswordTokenV3) setStaticFields() {
 }
 
 // CheckAndSetDefaults checks and set default values for any missing fields.
-func (u ResetPasswordTokenV3) CheckAndSetDefaults() error {
+func (u *ResetPasswordTokenV3) CheckAndSetDefaults() error {
 	u.setStaticFields()
 	if err := u.Metadata.CheckAndSetDefaults(); err != nil {
 		return trace.Wrap(err)
@@ -157,4 +174,33 @@ func (u ResetPasswordTokenV3) CheckAndSetDefaults() error {
 // // String represents a human readable version of the token
 func (u *ResetPasswordTokenV3) String() string {
 	return fmt.Sprintf("ResetPasswordTokenV3(tokenID=%v, user=%v, expires at %v)", u.GetName(), u.Spec.User, u.Expiry())
+}
+
+// IncrementAuthAttempt increases the attempt counter by 1.
+func (u *ResetPasswordTokenV3) IncrementAuthAttempt() {
+	u.AuthAttempts += 1
+}
+
+// GetAuthAttempts returns number of failed auth attempts.
+func (u *ResetPasswordTokenV3) GetAuthAttempts() int32 {
+	return u.AuthAttempts
+}
+
+// CheckSubKindType checks if given token type matches with the subkind.
+func (u *ResetPasswordTokenV3) CheckSubKindType(tokenType string) error {
+	if tokenType == ResetPasswordTokenRecoveryStart {
+		if u.GetSubKind() != KindRecoverPassword && u.GetSubKind() != KindRecoverSecondFactor {
+			return trace.BadParameter("invalid token subkind")
+		}
+		return nil
+	}
+
+	if tokenType == ResetPasswordTokenRecoveryApproved {
+		if u.GetSubKind() != KindRecoverPasswordApproved && u.GetSubKind() != KindRecoverSecondFactorApproved {
+			return trace.BadParameter("invalid token subkind")
+		}
+		return nil
+	}
+
+	return trace.BadParameter("unknown reset password token type")
 }
