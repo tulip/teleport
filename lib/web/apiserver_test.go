@@ -44,6 +44,7 @@ import (
 	"golang.org/x/text/encoding/unicode"
 
 	"github.com/gravitational/teleport"
+	apiProto "github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/client/webclient"
 	"github.com/gravitational/teleport/api/constants"
 	apidefaults "github.com/gravitational/teleport/api/defaults"
@@ -1362,9 +1363,9 @@ func (s *WebSuite) TestChangePasswordWithTokenOTP(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	var rawSess *CreateSessionResponse
-	c.Assert(json.Unmarshal(re.Bytes(), &rawSess), IsNil)
-	c.Assert(rawSess.Token != "", Equals, true)
+	var recoveryTokens []string
+	c.Assert(json.Unmarshal(re.Bytes(), &recoveryTokens), IsNil)
+	c.Assert(recoveryTokens, HasLen, 0)
 }
 
 func (s *WebSuite) TestChangePasswordWithTokenU2F(c *C) {
@@ -1419,9 +1420,9 @@ func (s *WebSuite) TestChangePasswordWithTokenU2F(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	var rawSess *CreateSessionResponse
-	c.Assert(json.Unmarshal(re.Bytes(), &rawSess), IsNil)
-	c.Assert(rawSess.Token != "", Equals, true)
+	var recoveryTokens []string
+	c.Assert(json.Unmarshal(re.Bytes(), &recoveryTokens), IsNil)
+	c.Assert(recoveryTokens, HasLen, 0)
 }
 
 func TestU2FLogin(t *testing.T) {
@@ -1474,10 +1475,13 @@ func testU2FLogin(t *testing.T, secondFactor constants.SecondFactorType) {
 	require.NoError(t, err)
 
 	tempPass := []byte("abc123")
-	_, err = env.proxies[0].client.ChangePasswordWithToken(context.TODO(), auth.ChangePasswordWithTokenRequest{
-		TokenID:             token.GetName(),
-		U2FRegisterResponse: u2fRegResp,
-		Password:            tempPass,
+	_, err = env.proxies[0].client.ChangePasswordWithToken(context.TODO(), &apiProto.ChangeUserAuthCredWithTokenRequest{
+		TokenID: token.GetName(),
+		U2FRegisterResponse: &apiProto.U2FRegisterResponse{
+			RegistrationData: u2fRegResp.RegistrationData,
+			ClientData:       u2fRegResp.ClientData,
+		},
+		Password: tempPass,
 	})
 	require.NoError(t, err)
 
