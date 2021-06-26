@@ -1058,6 +1058,119 @@ func (s *IdentityService) GetGithubAuthRequest(stateToken string) (*services.Git
 	return &req, nil
 }
 
+// GetRecoveryCodes returns user's recovery codes.
+func (s *IdentityService) GetRecoveryCodes(ctx context.Context, user string) (*types.RecoveryCodes, error) {
+	if user == "" {
+		return nil, trace.BadParameter("missing parameter user")
+	}
+
+	item, err := s.Get(ctx, backend.Key(webPrefix, usersPrefix, user, recoveryCodesPrefix))
+	if err != nil {
+		if trace.IsNotFound(err) {
+			return nil, trace.NotFound("user %q is not found", user)
+		}
+		return nil, trace.Wrap(err)
+	}
+
+	var tokens types.RecoveryCodes
+	if err := json.Unmarshal(item.Value, &tokens); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return &tokens, nil
+}
+
+// UpsertRecoveryCodes creates or updates user's account recovery codes.
+// Each recovery code are hashed before upsert.
+func (s *IdentityService) UpsertRecoveryCodes(ctx context.Context, user string, recovery types.RecoveryCodes) error {
+	if user == "" {
+		return trace.BadParameter("missing parameter user")
+	}
+
+	if err := recovery.CheckAndSetDefaults(); err != nil {
+		return trace.Wrap(err)
+	}
+
+	value, err := json.Marshal(recovery)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	item := backend.Item{
+		Key:   backend.Key(webPrefix, usersPrefix, user, recoveryCodesPrefix),
+		Value: value,
+	}
+
+	if _, err := s.Put(ctx, item); err != nil {
+		return trace.Wrap(err)
+	}
+
+	return nil
+}
+
+// UpsertRecoveryAttempt create or updates user's recovery attempt.
+func (s *IdentityService) UpsertRecoveryAttempt(ctx context.Context, user string, attempt *types.RecoveryAttempt) error {
+	if user == "" {
+		return trace.BadParameter("missing parameter user")
+	}
+
+	if err := attempt.Check(); err != nil {
+		return trace.Wrap(err)
+	}
+
+	value, err := json.Marshal(attempt)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	item := backend.Item{
+		Key:     backend.Key(webPrefix, usersPrefix, user, recoveryAttemptsPrefix),
+		Value:   value,
+		Expires: attempt.GetCreated().Add(defaults.AttemptTTL),
+	}
+
+	_, err = s.Put(ctx, item)
+
+	return trace.Wrap(err)
+}
+
+// GetRecoveryAttempt returns user's recovery attempt.
+func (s *IdentityService) GetRecoveryAttempt(ctx context.Context, user string) (*types.RecoveryAttempt, error) {
+	if user == "" {
+		return nil, trace.BadParameter("missing parameter user")
+	}
+
+	item, err := s.Get(ctx, backend.Key(webPrefix, usersPrefix, user, recoveryAttemptsPrefix))
+	if err != nil {
+		if trace.IsNotFound(err) {
+			return nil, trace.NotFound("user %q is not found", user)
+		}
+		return nil, trace.Wrap(err)
+	}
+
+	var attempt *types.RecoveryAttempt
+	if err := json.Unmarshal(item.Value, &attempt); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return attempt, nil
+}
+
+// DeleteRecoveryAttempt removes user's recovery attempt.
+func (s *IdentityService) DeleteRecoveryAttempt(ctx context.Context, user string) error {
+	if _, err := s.GetRecoveryAttempt(ctx, user); err != nil {
+		return trace.Wrap(err)
+	}
+
+	startKey := backend.Key(webPrefix, usersPrefix, user, recoveryAttemptsPrefix)
+	err := s.DeleteRange(context.TODO(), startKey, backend.RangeEnd(startKey))
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	return nil
+}
+
 const (
 	webPrefix              = "web"
 	usersPrefix            = "users"
@@ -1075,6 +1188,8 @@ const (
 	usedTOTPTTL            = 30 * time.Second
 	mfaDevicePrefix        = "mfa"
 	u2fSignChallengePrefix = "u2fsignchallenge"
+	recoveryCodesPrefix    = "recoverycodes"
+	recoveryAttemptsPrefix = "recoveryattempts"
 
 	// DELETE IN 7.0: these prefixes are migrated to mfaDevicePrefix in 6.0 on
 	// first startup.

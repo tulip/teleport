@@ -106,6 +106,31 @@ func (s *IdentityService) CreateResetPasswordToken(ctx context.Context, token ty
 	return token, nil
 }
 
+// UpdateResetPasswordToken updates a reset token.
+func (s *IdentityService) UpdateResetPasswordToken(ctx context.Context, token types.ResetPasswordToken) error {
+	if err := token.CheckAndSetDefaults(); err != nil {
+		return trace.Wrap(err)
+	}
+
+	value, err := services.MarshalResetPasswordToken(token)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	item := backend.Item{
+		Key:     backend.Key(passwordTokensPrefix, token.GetName(), paramsPrefix),
+		Value:   value,
+		Expires: token.Expiry(),
+	}
+
+	_, err = s.Update(ctx, item)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	return nil
+}
+
 // GetResetPasswordTokenSecrets returns token secrets
 func (s *IdentityService) GetResetPasswordTokenSecrets(ctx context.Context, tokenID string) (types.ResetPasswordTokenSecrets, error) {
 	item, err := s.Get(ctx, backend.Key(passwordTokensPrefix, tokenID, secretsPrefix))

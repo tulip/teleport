@@ -192,6 +192,9 @@ type Identity interface {
 	// CreateResetPasswordToken creates a token
 	CreateResetPasswordToken(ctx context.Context, resetPasswordToken types.ResetPasswordToken) (types.ResetPasswordToken, error)
 
+	// UpdateResetPasswordToken updates a token.
+	UpdateResetPasswordToken(ctx context.Context, resetPasswordToken types.ResetPasswordToken) error
+
 	// DeleteResetPasswordToken deletes a token
 	DeleteResetPasswordToken(ctx context.Context, tokenID string) error
 
@@ -206,6 +209,21 @@ type Identity interface {
 
 	// GetResetPasswordTokenSecrets returns token secrets
 	GetResetPasswordTokenSecrets(ctx context.Context, tokenID string) (types.ResetPasswordTokenSecrets, error)
+
+	// UpsertRecoveryCodes upserts a user's recovery tokens.
+	UpsertRecoveryCodes(ctx context.Context, user string, recovery types.RecoveryCodes) error
+
+	// GetRecoveryCodes gets a user's recovery codes.
+	GetRecoveryCodes(ctx context.Context, user string) (*types.RecoveryCodes, error)
+
+	// UpsertRecoveryAttempt logs user account recovery attempt.
+	UpsertRecoveryAttempt(ctx context.Context, user string, attempt *types.RecoveryAttempt) error
+
+	// GetRecoveryAttempt returns user account recovery attempt.
+	GetRecoveryAttempt(ctx context.Context, user string) (*types.RecoveryAttempt, error)
+
+	// DeleteRecoveryAttempt removes account recovery attempts of a user.
+	DeleteRecoveryAttempt(ctx context.Context, user string) error
 
 	types.WebSessionsGetter
 	types.WebTokensGetter
