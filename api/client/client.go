@@ -1332,14 +1332,17 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 	if err != nil {
 		e := make(chan error)
 		go func() {
-			e <- trace.Wrap(err)
+			select {
+			case e <- trace.Wrap(err):
+			case <-ctx.Done():
+			}
 			close(ch)
 		}()
 
 		return ch, e
 	}
 
-	e := make(chan error)
+	e := make(chan error, 1)
 
 	go func() {
 	outer:
@@ -1359,7 +1362,10 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 				break outer
 			}
 
-			ch <- event
+			select {
+				case ch <- event:
+				case <-ctx.Done():
+		 	}
 		}
 
 		close(ch)
