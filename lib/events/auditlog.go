@@ -1067,6 +1067,10 @@ func (c *chunkStream) Read(p []byte) (n int, err error) {
 		c.offset += len(c.buffer)
 	}
 
+	if len(c.buffer) == 0 {
+		return 0, io.EOF
+	}
+
 	written := copy(p, c.buffer[c.readUntil:])
 	c.readUntil += written
 	return written, nil

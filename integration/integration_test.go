@@ -5492,29 +5492,17 @@ retry:
 	for {
 		sessionPlayback, e := api.StreamSessionEvents(ctx, sessionID, 0)
 
-		select {
-		case startEvent := <-sessionPlayback:
-			_, ok := startEvent.(*apievents.SessionStart)
-			require.True(t, ok, "%T", startEvent)
-		case err := <-e:
-			if trace.IsNotFound(err) && time.Since(start) < time.Minute*5 {
-				time.Sleep(time.Second * 5)
-				continue retry
-			}
-
-			require.Nil(t, err)
-		}
-
 		for i := 0; i < 1000; i++ {
 			select {
-			case event := <-sessionPlayback:
+			case event, more := <-sessionPlayback:
+				require.True(t, more)
 				printEvent, ok := event.(*apievents.SessionPrint)
 				require.True(t, ok)
 				require.Equal(t, i, printEvent.ChunkIndex)
 			case <-ctx.Done():
 				require.Nil(t, ctx.Err())
 			case err := <-e:
-				if trace.IsNotFound(err) && time.Since(start) < time.Minute*5 {
+				if time.Since(start) < time.Minute*5 {
 					time.Sleep(time.Second * 5)
 					continue retry
 				}
