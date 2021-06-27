@@ -554,7 +554,6 @@ func (l *Log) SearchEvents(fromUTC, toUTC time.Time, namespace string, eventType
 	default:
 		return nil, "", trace.BadParameter("invalid event order")
 	}
-
 	sort.Sort(toSort)
 
 	eventArr := make([]apievents.AuditEvent, 0, len(values))
