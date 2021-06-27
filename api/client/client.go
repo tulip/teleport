@@ -1320,7 +1320,7 @@ func (c *Client) DeleteAllNodes(ctx context.Context, namespace string) error {
 }
 
 // SearchEvents allows searching for events with a full pagination support.
-func (c *Client) SearchEvents(ctx context.Context, fromUTC, toUTC time.Time, namespace string, eventTypes []string, limit int, startKey string) ([]events.AuditEvent, string, error) {
+func (c *Client) SearchEvents(ctx context.Context, fromUTC, toUTC time.Time, namespace string, eventTypes []string, limit int, order types.EventOrder, startKey string) ([]events.AuditEvent, string, error) {
 	request := &proto.GetEventsRequest{
 		Namespace:  namespace,
 		StartDate:  fromUTC,
@@ -1328,6 +1328,7 @@ func (c *Client) SearchEvents(ctx context.Context, fromUTC, toUTC time.Time, nam
 		EventTypes: eventTypes,
 		Limit:      int32(limit),
 		StartKey:   startKey,
+		Order:      int32(order),
 	}
 
 	response, err := c.grpc.GetEvents(ctx, request, c.callOpts...)
@@ -1348,12 +1349,13 @@ func (c *Client) SearchEvents(ctx context.Context, fromUTC, toUTC time.Time, nam
 }
 
 // SearchSessionEvents allows searching for session events with a full pagination support.
-func (c *Client) SearchSessionEvents(ctx context.Context, fromUTC time.Time, toUTC time.Time, limit int, startKey string) ([]events.AuditEvent, string, error) {
+func (c *Client) SearchSessionEvents(ctx context.Context, fromUTC time.Time, toUTC time.Time, limit int, order types.EventOrder, startKey string) ([]events.AuditEvent, string, error) {
 	request := &proto.GetSessionEventsRequest{
 		StartDate: fromUTC,
 		EndDate:   toUTC,
 		Limit:     int32(limit),
 		StartKey:  startKey,
+		Order:     int32(order),
 	}
 
 	response, err := c.grpc.GetSessionEvents(ctx, request, c.callOpts...)
