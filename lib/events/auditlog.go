@@ -1080,17 +1080,38 @@ func (c *chunkStream) Read(p []byte) (n int, err error) {
 // channel if one is encountered. Otherwise it is simply closed when the stream ends.
 func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID session.ID, startIndex int) (chan apievents.AuditEvent, chan error) {
 	l.log.Debugf("StreamSessionEvents(%v)", sessionID)
-
-	rawStream := &chunkStream{
-		log:       l,
-		sessionID: sessionID,
-		readUntil: chunkStreamSize,
-		offset:    0,
-	}
-
-	protoReader := NewProtoReader(rawStream)
 	e := make(chan error)
 	c := make(chan apievents.AuditEvent)
+
+	tarballPath := filepath.Join(l.playbackDir, string(sessionID)+".tar")
+	downloadCtx, cancel := l.createOrGetDownload(tarballPath)
+
+	// Wait until another in progress download finishes and use it's tarball.
+	if cancel == nil {
+		l.log.Debugf("Another download is in progress for %v, waiting until it gets completed.", sessionID)
+		select {
+		case <-downloadCtx.Done():
+		case <-l.ctx.Done():
+			go func() {
+				e <- trace.BadParameter("audit log is closing, aborting the download")
+				close(c)
+			}()
+			return c, e
+		}
+	}
+	defer cancel()
+	log.Debugf("downloaded pre stream")
+
+	rawSessionReader, err := os.OpenFile(tarballPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0640)
+	if err != nil {
+		go func() {
+			e <- trace.Wrap(err)
+			close(c)
+		}()
+		return c, e
+	}
+
+	protoReader := NewProtoReader(rawSessionReader)
 
 	go func() {
 		for {
