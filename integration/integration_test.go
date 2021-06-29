@@ -5468,35 +5468,37 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 	defer teleport.StopAll()
 
 	api := teleport.GetSiteAPI(Site)
-	auditStream, err := api.CreateAuditStream(ctx, sessionID)
+	uploadStream, err := api.CreateAuditStream(ctx, sessionID)
 	require.Nil(t, err)
 
-	for i := 0; i < 1000; i++ {
-		err = auditStream.EmitAuditEvent(ctx, &apievents.SessionPrint{
-			Metadata: apievents.Metadata{
-				Index: int64(i),
-				Type:  events.SessionPrintEvent,
-				Time:  time.Now(),
-			},
-			ChunkIndex: int64(i),
-		})
+	generatedSession := events.GenerateTestSession(events.SessionParams{
+		PrintEvents: 100,
+		SessionID:   string(sessionID),
+		ServerID:    "00000000-0000-0000-0000-000000000000",
+	})
 
-		require.Nil(t, err)
+	for _, event := range generatedSession {
+		err := uploadStream.EmitAuditEvent(ctx, event)
+		require.NoError(t, err)
 	}
 
-	err = auditStream.Complete(ctx)
+	err = uploadStream.Complete(ctx)
 	require.Nil(t, err)
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 10)
 
+	receivedSession := make([]apievents.AuditEvent, 0)
 	sessionPlayback, e := api.StreamSessionEvents(ctx, sessionID, 0)
 
-	for i := 0; i < 1000; i++ {
+	for {
 		select {
 		case event, more := <-sessionPlayback:
-			require.True(t, more)
-			printEvent, ok := event.(*apievents.SessionPrint)
-			require.True(t, ok)
-			require.Equal(t, i, printEvent.ChunkIndex)
+			if !more {
+				break
+			}
+
+			log.Debugf("receive count %v", len(receivedSession))
+
+			receivedSession = append(receivedSession, event)
 		case <-ctx.Done():
 			require.Nil(t, ctx.Err())
 		case err := <-e:

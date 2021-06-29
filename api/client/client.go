@@ -1363,9 +1363,9 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 			}
 
 			select {
-				case ch <- event:
-				case <-ctx.Done():
-		 	}
+			case ch <- event:
+			case <-ctx.Done():
+			}
 		}
 
 		close(ch)
