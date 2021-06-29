@@ -5486,33 +5486,23 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 
 	err = auditStream.Complete(ctx)
 	require.Nil(t, err)
-	start := time.Now()
+	time.Sleep(time.Second * 5)
 
-retry:
-	for {
-		sessionPlayback, e := api.StreamSessionEvents(ctx, sessionID, 0)
+	sessionPlayback, e := api.StreamSessionEvents(ctx, sessionID, 0)
 
-		for i := 0; i < 1000; i++ {
-			select {
-			case event, more := <-sessionPlayback:
-				require.True(t, more)
-				printEvent, ok := event.(*apievents.SessionPrint)
-				require.True(t, ok)
-				require.Equal(t, i, printEvent.ChunkIndex)
-			case <-ctx.Done():
-				require.Nil(t, ctx.Err())
-			case err := <-e:
-				if time.Since(start) < time.Minute*5 {
-					time.Sleep(time.Second * 5)
-					continue retry
-				}
-
-				require.Nil(t, err)
-			case <-time.After(time.Minute * 5):
-				t.FailNow()
-			}
+	for i := 0; i < 1000; i++ {
+		select {
+		case event, more := <-sessionPlayback:
+			require.True(t, more)
+			printEvent, ok := event.(*apievents.SessionPrint)
+			require.True(t, ok)
+			require.Equal(t, i, printEvent.ChunkIndex)
+		case <-ctx.Done():
+			require.Nil(t, ctx.Err())
+		case err := <-e:
+			require.Nil(t, err)
+		case <-time.After(time.Minute * 5):
+			t.FailNow()
 		}
-
-		break
 	}
 }
