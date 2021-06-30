@@ -1327,22 +1327,13 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 	}
 
 	ch := make(chan events.AuditEvent)
+	e := make(chan error, 1)
 
 	stream, err := c.grpc.StreamSessionEvents(ctx, request)
 	if err != nil {
-		e := make(chan error)
-		go func() {
-			select {
-			case e <- trace.Wrap(err):
-			case <-ctx.Done():
-			}
-			close(ch)
-		}()
-
+		e <- trace.Wrap(err)
 		return ch, e
 	}
-
-	e := make(chan error, 1)
 
 	go func() {
 	outer:
@@ -1351,6 +1342,8 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 			if err != nil {
 				if err != io.EOF {
 					e <- trace.Wrap(trail.FromGRPC(err))
+				} else {
+					close(ch)
 				}
 
 				break outer
@@ -1365,10 +1358,10 @@ func (c *Client) StreamSessionEvents(ctx context.Context, sessionID string, star
 			select {
 			case ch <- event:
 			case <-ctx.Done():
+				e <- trace.Wrap(ctx.Err())
+				break outer
 			}
 		}
-
-		close(ch)
 	}()
 
 	return ch, e
