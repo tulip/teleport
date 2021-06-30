@@ -1100,9 +1100,31 @@ func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID session.ID
 		}
 	}
 	defer cancel()
-	log.Debugf("downloaded pre stream")
+	rawSession, err := os.OpenFile(tarballPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0640)
 
-	rawSessionReader, err := os.OpenFile(tarballPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0640)
+	start := time.Now()
+	if err := l.UploadHandler.Download(l.ctx, sessionID, rawSession); err != nil {
+		// remove partially downloaded tarball
+		if rmErr := os.Remove(tarballPath); rmErr != nil {
+			l.log.WithError(rmErr).Warningf("Failed to remove file %v.", tarballPath)
+		}
+
+		go func() {
+			e <- trace.Wrap(err)
+			close(c)
+		}()
+		return c, e
+	}
+
+	l.log.WithField("duration", time.Since(start)).Debugf("Downloaded %v to %v.", sessionID, tarballPath)
+	_, err = rawSession.Seek(0, 0)
+	if err != nil {
+		go func() {
+			e <- trace.Wrap(err)
+			close(c)
+		}()
+	}
+
 	if err != nil {
 		go func() {
 			e <- trace.Wrap(err)
@@ -1111,7 +1133,7 @@ func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID session.ID
 		return c, e
 	}
 
-	protoReader := NewProtoReader(rawSessionReader)
+	protoReader := NewProtoReader(rawSession)
 
 	go func() {
 		for {
