@@ -2683,7 +2683,9 @@ func (g *GRPCServer) authenticate(ctx context.Context) (*grpcContext, error) {
 	}, nil
 }
 
-// Streams events from a session recording.
+// StreamSessionEvents streams all events from a given session recording. An error is returned on the first
+// channel if one is encountered. Otherwise it is simply closed when the stream ends.
+// The event channel is not closed on error to prevent race conditions in downstream select statements.
 func (g *GRPCServer) StreamSessionEvents(req *proto.StreamSessionEventsRequest, stream proto.AuthService_StreamSessionEventsServer) error {
 	auth, err := g.authenticate(stream.Context())
 	if err != nil {
