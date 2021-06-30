@@ -134,11 +134,7 @@ func (w *WriterLog) WaitForDelivery(context.Context) error {
 // StreamSessionEvents streams all events from a given session recording. An error is returned on the first
 // channel if one is encountered. Otherwise it is simply closed when the stream ends.
 func (w *WriterLog) StreamSessionEvents(ctx context.Context, sessionID session.ID, startIndex int) (chan apievents.AuditEvent, chan error) {
-	c, e := make(chan apievents.AuditEvent), make(chan error)
-	go func() {
-		e <- trace.NotImplemented(loggerClosedMessage)
-		close(c)
-	}()
-
+	c, e := make(chan apievents.AuditEvent), make(chan error, 1)
+	e <- trace.NotImplemented(loggerClosedMessage)
 	return c, e
 }
