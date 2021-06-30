@@ -1041,41 +1041,6 @@ func (l *AuditLog) SearchSessionEvents(fromUTC, toUTC time.Time, limit int, star
 	return l.localLog.SearchSessionEvents(fromUTC, toUTC, limit, startKey)
 }
 
-const chunkStreamSize = 64 * 1024
-
-type chunkStream struct {
-	log       *AuditLog
-	sessionID session.ID
-	buffer    []byte
-	readUntil int
-	offset    int
-}
-
-func (c *chunkStream) Read(p []byte) (n int, err error) {
-	if c.readUntil >= len(c.buffer) {
-		chunk, err := c.log.GetSessionChunk("default", c.sessionID, c.offset, chunkStreamSize)
-		if err != nil {
-			if trace.Unwrap(err) == io.EOF {
-				return 0, io.EOF
-			}
-
-			return 0, err
-		}
-
-		c.buffer = chunk
-		c.readUntil = 0
-		c.offset += len(c.buffer)
-	}
-
-	if len(c.buffer) == 0 {
-		return 0, io.EOF
-	}
-
-	written := copy(p, c.buffer[c.readUntil:])
-	c.readUntil += written
-	return written, nil
-}
-
 // StreamSessionEvents streams all events from a given session recording. An error is returned on the first
 // channel if one is encountered. Otherwise it is simply closed when the stream ends.
 func (l *AuditLog) StreamSessionEvents(ctx context.Context, sessionID session.ID, startIndex int) (chan apievents.AuditEvent, chan error) {
