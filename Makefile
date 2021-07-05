@@ -112,6 +112,24 @@ endif
 endif
 endif
 
+# Check if rust and cargo are installed before compiling
+with_roletester := no
+ifeq ("$(OS)", "windows")
+CHECK_CARGO := $(shell where cargo)
+CHECK_RUST := $(shell where rustc)
+else
+CHECK_CARGO := $(shell which cargo)
+CHECK_RUST := $(shell which rustc)
+endif
+
+ifneq (, "$(CHECK_RUST)")
+ifneq (, "$(CHECK_CARGO)")
+with_roletester := yes
+ROLETESTER_TAG := roletester
+ROLETESTER_BUILDDIR := lib/datalog/roletester/Cargo.toml
+endif
+endif
+
 # On Windows only build tsh. On all other platforms build teleport, tctl,
 # and tsh.
 BINARIES=$(BUILDDIR)/teleport $(BUILDDIR)/tctl $(BUILDDIR)/tsh
@@ -144,8 +162,8 @@ all: version
 # * Manual change detection was broken on a large dependency tree
 # If you are considering changing this behavior, please consult with dev team first
 .PHONY: $(BUILDDIR)/tctl
-$(BUILDDIR)/tctl:
-	GOOS=$(OS) GOARCH=$(ARCH) $(CGOFLAG) go build -tags "$(PAM_TAG) $(FIPS_TAG) $(BPF_TAG)" -o $(BUILDDIR)/tctl $(BUILDFLAGS) ./tool/tctl
+$(BUILDDIR)/tctl: roletester
+	GOOS=$(OS) GOARCH=$(ARCH) $(CGOFLAG) go build -tags "$(PAM_TAG) $(FIPS_TAG) $(BPF_TAG) $(ROLETESTER_TAG)" -o $(BUILDDIR)/tctl $(BUILDFLAGS) ./tool/tctl
 
 .PHONY: $(BUILDDIR)/teleport
 $(BUILDDIR)/teleport: ensure-webassets bpf-bytecode
@@ -179,6 +197,19 @@ update-vmlinux-h:
 else
 .PHONY: bpf-bytecode
 bpf-bytecode:
+endif
+
+#
+# tctl role tester
+# Requires a recent version of Rust and Cargo installed (tested rustc >= 1.52.1 and cargo >= 1.52.0)
+#
+ifeq ("$(with_roletester)", "yes")
+.PHONY: roletester
+roletester:
+	cargo build --manifest-path=$(ROLETESTER_BUILDDIR) --release
+else
+.PHONY: roletester
+roletester:
 endif
 
 #
