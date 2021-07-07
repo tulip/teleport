@@ -23,9 +23,9 @@ import (
 	"time"
 
 	"github.com/gravitational/teleport"
-	"github.com/gravitational/teleport/api/types"
-	"github.com/gravitational/teleport/api/types/wrappers"
-	"github.com/gravitational/teleport/api/utils"
+	"github.com/gravitational/teleport/api/v2/types"
+	"github.com/gravitational/teleport/api/v2/types/wrappers"
+	"github.com/gravitational/teleport/api/v2/utils"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/tlsca"
 

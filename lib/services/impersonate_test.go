@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"testing"
 
-	apidefaults "github.com/gravitational/teleport/api/defaults"
-	"github.com/gravitational/teleport/api/types"
+	apidefaults "github.com/gravitational/teleport/api/v2/defaults"
+	"github.com/gravitational/teleport/api/v2/types"
 
 	"github.com/gravitational/trace"
 	"github.com/stretchr/testify/require"

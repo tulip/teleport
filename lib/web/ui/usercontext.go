@@ -17,10 +17,10 @@ limitations under the License.
 package ui
 
 import (
-	"github.com/gravitational/teleport/api/client/proto"
-	apidefaults "github.com/gravitational/teleport/api/defaults"
-	"github.com/gravitational/teleport/api/types"
-	apiutils "github.com/gravitational/teleport/api/utils"
+	"github.com/gravitational/teleport/api/v2/client/proto"
+	apidefaults "github.com/gravitational/teleport/api/v2/defaults"
+	"github.com/gravitational/teleport/api/v2/types"
+	apiutils "github.com/gravitational/teleport/api/v2/utils"
 	"github.com/gravitational/teleport/lib/services"
 )
 

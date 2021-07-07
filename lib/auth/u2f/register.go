@@ -31,8 +31,8 @@ import (
 	"github.com/gravitational/trace"
 	"github.com/gravitational/ttlmap"
 
-	"github.com/gravitational/teleport/api/types"
-	"github.com/gravitational/teleport/api/utils/tlsutils"
+	"github.com/gravitational/teleport/api/v2/types"
+	"github.com/gravitational/teleport/api/v2/utils/tlsutils"
 )
 
 // Registration sequence:

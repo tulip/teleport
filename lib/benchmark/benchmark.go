@@ -29,7 +29,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gravitational/teleport/api/profile"
+	"github.com/gravitational/teleport/api/v2/profile"
 	"github.com/gravitational/teleport/lib/client"
 	"github.com/gravitational/teleport/lib/utils"
 

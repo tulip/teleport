@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gravitational/teleport/api/constants"
-	"github.com/gravitational/teleport/api/types"
-	apiutils "github.com/gravitational/teleport/api/utils"
+	"github.com/gravitational/teleport/api/v2/constants"
+	"github.com/gravitational/teleport/api/v2/types"
+	apiutils "github.com/gravitational/teleport/api/v2/utils"
 	"github.com/gravitational/teleport/lib/asciitable"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/sshutils"

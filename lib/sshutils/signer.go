@@ -20,7 +20,7 @@ import (
 	"crypto"
 	"io"
 
-	"github.com/gravitational/teleport/api/utils/sshutils"
+	"github.com/gravitational/teleport/api/v2/utils/sshutils"
 
 	"golang.org/x/crypto/ssh"
 

@@ -22,9 +22,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/gravitational/teleport/api/types"
-	"github.com/gravitational/teleport/api/types/wrappers"
-	apiutils "github.com/gravitational/teleport/api/utils"
+	"github.com/gravitational/teleport/api/v2/types"
+	"github.com/gravitational/teleport/api/v2/types/wrappers"
+	apiutils "github.com/gravitational/teleport/api/v2/utils"
 	"github.com/gravitational/teleport/lib/auth/u2f"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/jwt"

@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	apidefaults "github.com/gravitational/teleport/api/defaults"
-	"github.com/gravitational/teleport/api/types/events"
+	apidefaults "github.com/gravitational/teleport/api/v2/defaults"
+	"github.com/gravitational/teleport/api/v2/types/events"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"

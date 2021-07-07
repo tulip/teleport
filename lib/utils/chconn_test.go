@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/gravitational/teleport"
-	"github.com/gravitational/teleport/api/utils/sshutils"
+	"github.com/gravitational/teleport/api/v2/utils/sshutils"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"

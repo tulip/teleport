@@ -24,8 +24,8 @@ import (
 	"context"
 	"time"
 
-	apidefaults "github.com/gravitational/teleport/api/defaults"
-	"github.com/gravitational/teleport/api/types"
+	apidefaults "github.com/gravitational/teleport/api/v2/defaults"
+	"github.com/gravitational/teleport/api/v2/types"
 	"github.com/gravitational/teleport/lib/auth/u2f"
 	"github.com/gravitational/teleport/lib/defaults"
 

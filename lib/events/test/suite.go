@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	apidefaults "github.com/gravitational/teleport/api/defaults"
-	apievents "github.com/gravitational/teleport/api/types/events"
+	apidefaults "github.com/gravitational/teleport/api/v2/defaults"
+	apievents "github.com/gravitational/teleport/api/v2/types/events"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/fixtures"
 	"github.com/gravitational/teleport/lib/session"

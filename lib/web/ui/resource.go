@@ -19,7 +19,7 @@ package ui
 import (
 	"fmt"
 
-	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/v2/types"
 
 	"github.com/gravitational/trace"
 

@@ -23,7 +23,7 @@ import (
 	"math"
 	"time"
 
-	apievents "github.com/gravitational/teleport/api/types/events"
+	apievents "github.com/gravitational/teleport/api/v2/types/events"
 	"github.com/gravitational/teleport/lib/session"
 
 	"github.com/gravitational/trace"

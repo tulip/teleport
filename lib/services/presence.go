@@ -19,7 +19,7 @@ package services
 import (
 	"context"
 
-	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/v2/types"
 )
 
 // Presence records and reports the presence of all components

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/v2/types"
 )
 
 // App describes an application

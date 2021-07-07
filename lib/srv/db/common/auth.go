@@ -26,8 +26,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gravitational/teleport/api/client/proto"
-	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/v2/client/proto"
+	"github.com/gravitational/teleport/api/v2/types"
 	"github.com/gravitational/teleport/lib/auth"
 	libauth "github.com/gravitational/teleport/lib/auth"
 	"github.com/gravitational/teleport/lib/auth/native"

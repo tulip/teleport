@@ -20,8 +20,8 @@ import (
 	"context"
 	"strings"
 
-	apidefaults "github.com/gravitational/teleport/api/defaults"
-	"github.com/gravitational/teleport/api/types"
+	apidefaults "github.com/gravitational/teleport/api/v2/defaults"
+	"github.com/gravitational/teleport/api/v2/types"
 
 	"github.com/gravitational/trace"
 )

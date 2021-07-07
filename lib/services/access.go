@@ -19,7 +19,7 @@ package services
 import (
 	"context"
 
-	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/v2/types"
 )
 
 // Access service manages roles and permissions.
