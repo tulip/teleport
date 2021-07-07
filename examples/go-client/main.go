@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gravitational/teleport/api/client"
-	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/v2/client"
+	"github.com/gravitational/teleport/api/v2/types"
 
 	"github.com/pborman/uuid"
 )
