@@ -28,7 +28,6 @@ type ResetPasswordToken struct {
 	QRCode []byte `json:"qrCode,omitempty"`
 	// Expiry is token expiration time
 	Expiry time.Time `json:"expiry,omitempty"`
-	// IsResetSecondFactor is a flag that when true, token is used
-	// to reset secondfactor, else default is reset password.
-	IsResetSecondFactor bool `json:"isResetSecondFactor,omitempty"`
+	// RecoveryType is the recover type user requested upon starting recovery.
+	RecoveryType string `json:"recoverType,omitempty"`
 }

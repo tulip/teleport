@@ -936,7 +936,7 @@ func (a *Server) WithUserLock(username string, authenticateFn func() error) erro
 	if status.IsLocked {
 		if status.RecoveryAttemptLockExpires.After(a.clock.Now().UTC()) {
 			return trace.AccessDenied("%v exceeds %v failed account recovery attempts, locked until %v",
-				user.GetName(), types.MaxRecoveryAttempts, apiutils.HumanTimeFormat(status.RecoveryAttemptLockExpires))
+				user.GetName(), defaults.MaxRecoveryAttempts, apiutils.HumanTimeFormat(status.RecoveryAttemptLockExpires))
 		}
 		if status.LockExpires.After(a.clock.Now().UTC()) {
 			return trace.AccessDenied("%v exceeds %v failed login attempts, locked until %v",
@@ -2623,6 +2623,9 @@ const (
 
 	// TokenLenBytes is len in bytes of the invite token
 	TokenLenBytes = 16
+
+	// RecoveryTokenLenBytes is len in bytes of a user token for recovery.
+	RecoveryTokenLenBytes = 32
 
 	// SessionTokenBytes is the number of bytes of a web or application session.
 	SessionTokenBytes = 32

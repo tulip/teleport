@@ -912,20 +912,7 @@ message DeleteLockRequest {
     string Name = 1;
 }
 
-// ChangeUserAuthCredWithTokenRequest defines a request to change a user's auth cred
-// with a reset token.
-message ChangeUserAuthCredWithTokenRequest {
-    // TokenID is this token ID.
-    string TokenID = 1;
-    // SecondFactorToken is otp value.
-    string SecondFactorToken = 2;
-    // Password is user's password.
-    bytes Password = 3;
-    // U2FRegisterResponse is U2F registration challenge response.
-    U2FRegisterResponse U2FRegisterResponse = 4;
-}
-
-// ChangePasswordWithTokenResponse is a response for ChangePasswordWithTokenRequest.
+// ChangePasswordWithTokenResponse is a response for ChangePasswordWithToken.
 message ChangePasswordWithTokenResponse {
     types.WebSessionV2 WebSession = 1;
     repeated string RecoveryCodes = 2;
@@ -937,30 +924,44 @@ message VerifyRecoveryCodeRequest {
     string Username = 1;
     // RecoveryCode is one of the user's recovery code.
     bytes RecoveryCode = 2;
-    // IsResetSecondFactor is a flag that when true, user requested to change secondfactor, else
-    // password.
-    bool IsResetSecondFactor = 3;
+    // RecoverType defines the type of recovery user requested.
+    types.RecoverType RecoverType = 3;
 }
 
 // AuthenticateUserWithRecoveryTokenRequest defines a request to authenticate the user defined in
-// token with either password or second factor.
+// token with either password or a second factor.
 message AuthenticateUserWithRecoveryTokenRequest {
     // TokenID is this token ID.
     string TokenID = 1;
-    // SecondFactorToken is 2nd factor token value.
-    string SecondFactorToken = 2;
-    // Password is user password.
-    bytes Password = 3;
-    // U2FSignResponse is U2F sign response to a challenge.
-    U2FResponse U2FSignResponse = 4;
+    oneof AuthCred {
+        // SecondFactorToken is 2nd factor token value.
+        string SecondFactorToken = 2;
+        // Password is user password.
+        bytes Password = 3;
+        // U2FSignResponse is U2F sign response to a challenge.
+        U2FResponse U2FSignResponse = 4;
+    }
     // Username is the user the token was made for.
     string Username = 5;
 }
 
-// ChangePasswordOrSecondFactorResponse is a response for ChangePasswordOrSecondFactor.
-message ChangePasswordOrSecondFactorResponse {
+// RecoverAccountWithTokenResponse is a response for RecoverAccountWithToken.
+message RecoverAccountWithTokenResponse {
     string Username = 1;
     repeated string RecoveryCodes = 2;
+}
+
+// NewUserAuthCredWithTokenRequest defines a request to change one or more of a user's
+// authentication credential with a token.
+message NewUserAuthCredWithTokenRequest {
+    // TokenID is this token ID.
+    string TokenID = 1;
+    // SecondFactorToken is an otp value.
+    string SecondFactorToken = 2;
+    // Password is user's password.
+    bytes Password = 3;
+    // U2FRegisterResponse is U2F registration challenge response.
+    U2FRegisterResponse U2FRegisterResponse = 4;
 }
 
 // AuthService is authentication/authorization service implementation
@@ -1244,15 +1245,16 @@ service AuthService {
     rpc DeleteLock(DeleteLockRequest) returns (google.protobuf.Empty);
 
     // ChangePasswordWithToken changes a user's password with a reset token.
-    rpc ChangePasswordWithToken(ChangeUserAuthCredWithTokenRequest)
+    rpc ChangePasswordWithToken(NewUserAuthCredWithTokenRequest)
         returns (ChangePasswordWithTokenResponse);
     // VerifyRecoveryCode verifies a given recovery code.
     rpc VerifyRecoveryCode(VerifyRecoveryCodeRequest) returns (types.ResetPasswordTokenV3);
-    // AuthenticateUserWithRecoveryToken authenticates user defined in token with either password or
-    // second factor.
+    // AuthenticateUserWithRecoveryToken authenticates the user defined in token, with either their
+    // password or second factor.
     rpc AuthenticateUserWithRecoveryToken(AuthenticateUserWithRecoveryTokenRequest)
         returns (types.ResetPasswordTokenV3);
-    // ChangePasswordOrSecondFactor resets a user's auth cred as part of the recovery flow.
-    rpc ChangePasswordOrSecondFactor(ChangeUserAuthCredWithTokenRequest)
-        returns (ChangePasswordOrSecondFactorResponse);
+    // RecoverAccountWithToken is the last step in the recovery flow that either changes a user
+    // password or adds a new mfa device depending on the request.
+    rpc RecoverAccountWithToken(NewUserAuthCredWithTokenRequest)
+        returns (RecoverAccountWithTokenResponse);
 }

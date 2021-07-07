@@ -83,9 +83,13 @@ func TestGenerateUpsertAndVerifyRecoveryCodes(t *testing.T) {
 	err = srv.Auth().verifyRecoveryCode(ctx, user, []byte(rc[0]))
 	require.True(t, trace.IsBadParameter(err))
 
+	// Test with invalid recoery code returns error.
+	err = srv.Auth().verifyRecoveryCode(ctx, user, []byte("invalidcode"))
+	require.True(t, trace.IsBadParameter(err))
+
 	// Test with non-existing user returns error.
 	err = srv.Auth().verifyRecoveryCode(ctx, "doesnotexist", []byte(rc[0]))
-	require.True(t, trace.IsNotFound(err))
+	require.True(t, trace.IsBadParameter(err))
 }
 
 func TestRecoveryCodeEventsEmitted(t *testing.T) {
@@ -99,19 +103,22 @@ func TestRecoveryCodeEventsEmitted(t *testing.T) {
 	modules.SetModules(&testWithCloudModules{})
 
 	user := "fake@fake.com"
+
+	// Test generated recovery codes event.
 	tc, err := srv.Auth().generateAndUpsertRecoveryCodes(ctx, user)
 	require.NoError(t, err)
 	event := mockEmitter.LastEvent()
 	require.Equal(t, events.RecoveryCodeGeneratedEvent, event.GetType())
 	require.Equal(t, events.RecoveryCodesGeneratedCode, event.GetCode())
 
+	// Test used recovery code event.
 	err = srv.Auth().verifyRecoveryCode(ctx, user, []byte(tc[0]))
 	require.NoError(t, err)
 	event = mockEmitter.LastEvent()
 	require.Equal(t, events.RecoveryCodeUsedEvent, event.GetType())
 	require.Equal(t, events.RecoveryCodeUsedCode, event.GetCode())
 
-	// Re-using the same token should fail.
+	// Re-using the same token emits failed event.
 	err = srv.Auth().verifyRecoveryCode(ctx, user, []byte(tc[0]))
 	require.Error(t, err)
 	event = mockEmitter.LastEvent()
@@ -119,10 +126,10 @@ func TestRecoveryCodeEventsEmitted(t *testing.T) {
 	require.Equal(t, events.RecoveryCodeUsedFailureCode, event.GetCode())
 }
 
-// TestResetTOTPWithRecoveryTokenAndPassword tests a scenario where
-// user has an accout with a password and u2f but lost their u2f key and user
-// goes through the flow to reset second factor to a TOTP.
-func TestResetTOTPWithRecoveryTokenAndPassword(t *testing.T) {
+// TestAddTOTPWithRecoveryTokenAndPassword tests a scenario where
+// user has an accout with a password and u2f but doesn't have access to
+// the registered u2f key, and wants access to add a new totp device.
+func TestAddTOTPWithRecoveryTokenAndPassword(t *testing.T) {
 	srv := newTestTLSServer(t)
 	ctx := context.Background()
 
@@ -134,28 +141,29 @@ func TestResetTOTPWithRecoveryTokenAndPassword(t *testing.T) {
 	u, err := createUserAuthCreds(srv, "u2f")
 	require.NoError(t, err)
 
+	// Get access to begin recovery.
 	startToken, err := srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
-		Username:            u.username,
-		RecoveryCode:        []byte(u.recoveryCodes[0]),
-		IsResetSecondFactor: true,
+		Username:     u.username,
+		RecoveryCode: []byte(u.recoveryCodes[0]),
+		RecoverType:  types.RecoverType_RECOVER_TOTP,
 	})
 	require.NoError(t, err)
-	require.Equal(t, startToken.GetSubKind(), types.KindRecoverSecondFactor)
-	require.Equal(t, startToken.GetAuthAttempts(), int32(0))
+	require.Equal(t, ResetPasswordTokenRecoveryStart, startToken.GetSubKind())
 
+	// Get access to add a new totp device.
 	approvedToken, err := srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
 		TokenID:  startToken.GetName(),
 		Username: startToken.GetUser(),
-		Password: u.password,
+		AuthCred: &proto.AuthenticateUserWithRecoveryTokenRequest_Password{Password: u.password},
 	})
 	require.NoError(t, err)
-	require.Equal(t, approvedToken.GetSubKind(), types.KindRecoverSecondFactorApproved)
+	require.Equal(t, ResetPasswordTokenRecoveryApproved, approvedToken.GetSubKind())
 
-	// Change second factor to totp.
 	newOTP, err := getOTPCode(srv, approvedToken.GetName())
 	require.NoError(t, err)
 
-	res2, err := srv.Auth().ChangePasswordOrSecondFactor(ctx, &proto.ChangeUserAuthCredWithTokenRequest{
+	// Add new device.
+	res2, err := srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
 		TokenID:           approvedToken.GetName(),
 		SecondFactorToken: newOTP,
 	})
@@ -163,13 +171,7 @@ func TestResetTOTPWithRecoveryTokenAndPassword(t *testing.T) {
 	require.Equal(t, res2.Username, u.username)
 	require.Len(t, res2.RecoveryCodes, 3)
 
-	// Test only totp device is present.
-	mfas, err := srv.Auth().GetMFADevices(ctx, u.username)
-	require.NoError(t, err)
-	require.Len(t, mfas, 1)
-	require.NotEmpty(t, mfas[0].GetTotp())
-
-	// Test new tokens work.
+	// Test new recovery codes work.
 	for _, token := range res2.RecoveryCodes {
 		_, err = srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
 			Username:     u.username,
@@ -177,12 +179,58 @@ func TestResetTOTPWithRecoveryTokenAndPassword(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
+
+	// Test there are 2 mfa devices.
+	mfas, err := srv.Auth().GetMFADevices(ctx, u.username)
+	require.NoError(t, err)
+
+	deviceNames := make([]string, 0, len(mfas))
+	newTOTPKey := ""
+	for _, mfa := range mfas {
+		if mfa.MFAType() == "TOTP" {
+			newTOTPKey = mfa.GetTotp().Key
+		}
+		deviceNames = append(deviceNames, mfa.MFAType())
+	}
+	require.ElementsMatch(t, []string{"U2F", "TOTP"}, deviceNames)
+
+	// Try authenticating with the new otp device.
+	newOTP, err = totp.GenerateCode(newTOTPKey, srv.Clock().Now().Add(30*time.Second))
+	require.NoError(t, err)
+	_, err = srv.Auth().authenticateUser(ctx, AuthenticateUserRequest{
+		Username: u.username,
+		OTP: &OTPCreds{
+			Password: u.password,
+			Token:    newOTP,
+		},
+	})
+	require.NoError(t, err)
+
+	// Try authenticating with previously set up u2f device.
+	chal, err := srv.Auth().GetMFAAuthenticateChallenge(u.username, u.password)
+	require.NoError(t, err)
+
+	u2f, err := u.u2fKey.SignResponse(&u2f.SignRequest{
+		Version:   chal.Version,
+		Challenge: chal.Challenge,
+		KeyHandle: chal.KeyHandle,
+		AppID:     chal.AppID,
+	})
+	require.NoError(t, err)
+
+	_, err = srv.Auth().authenticateUser(ctx, AuthenticateUserRequest{
+		Username: u.username,
+		U2F: &U2FSignResponseCreds{
+			SignResponse: *u2f,
+		},
+	})
+	require.NoError(t, err)
 }
 
-// TestResetU2FWithRecoveryTokenAndPassword tests a scenario where
+// TestAddU2FWithRecoveryTokenAndPassword tests a scenario where
 // user has an accout with a password and totp but somehow lost access to a totp authenticator
-// and user goes through the flow to reset second factor to a u2f key.
-func TestResetU2FWithRecoveryTokenAndPassword(t *testing.T) {
+// and user wants access to add a new u2f device.
+func TestAddU2FWithRecoveryTokenAndPassword(t *testing.T) {
 	srv := newTestTLSServer(t)
 	ctx := context.Background()
 
@@ -194,40 +242,82 @@ func TestResetU2FWithRecoveryTokenAndPassword(t *testing.T) {
 	u, err := createUserAuthCreds(srv, "otp")
 	require.NoError(t, err)
 
+	// Get access to begin recovery.
 	startToken, err := srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
-		Username:            u.username,
-		RecoveryCode:        []byte(u.recoveryCodes[0]),
-		IsResetSecondFactor: true,
+		Username:     u.username,
+		RecoveryCode: []byte(u.recoveryCodes[0]),
+		RecoverType:  types.RecoverType_RECOVER_U2F,
 	})
 	require.NoError(t, err)
 
+	// Get access to add a new device.
 	approvedToken, err := srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
 		TokenID:  startToken.GetName(),
 		Username: startToken.GetUser(),
-		Password: []byte("abc123"),
+		AuthCred: &proto.AuthenticateUserWithRecoveryTokenRequest_Password{Password: []byte("abc123")},
 	})
 	require.NoError(t, err)
 
-	// Change second factor to u2f.
-	u2fRegResp, _, err := getMockedU2FAndRegisterRes(srv, approvedToken.GetName())
+	u2fRegResp, mockU2FKey, err := getMockedU2FAndRegisterRes(srv, approvedToken.GetName())
 	require.NoError(t, err)
 
-	res, err := srv.Auth().ChangePasswordOrSecondFactor(ctx, &proto.ChangeUserAuthCredWithTokenRequest{
+	// Add the new device.
+	res, err := srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
 		TokenID:             approvedToken.GetName(),
 		U2FRegisterResponse: u2fRegResp,
 	})
 	require.NoError(t, err)
 	require.Len(t, res.RecoveryCodes, 3)
 
-	// Test only u2f device is present.
+	// There should be 2 mfa devices.
 	mfas, err := srv.Auth().GetMFADevices(ctx, u.username)
 	require.NoError(t, err)
-	require.Len(t, mfas, 1)
-	require.NotEmpty(t, mfas[0].GetU2F())
+
+	deviceNames := make([]string, 0, len(mfas))
+	otpKey := ""
+	for _, mfa := range mfas {
+		if mfa.MFAType() == "TOTP" {
+			otpKey = mfa.GetTotp().Key
+		}
+		deviceNames = append(deviceNames, mfa.MFAType())
+	}
+	require.ElementsMatch(t, []string{"U2F", "TOTP"}, deviceNames)
+
+	// Try authenticating with the new u2f device.
+	chal, err := srv.Auth().GetMFAAuthenticateChallenge(u.username, u.password)
+	require.NoError(t, err)
+
+	u2f, err := mockU2FKey.SignResponse(&u2f.SignRequest{
+		Version:   chal.Version,
+		Challenge: chal.Challenge,
+		KeyHandle: chal.KeyHandle,
+		AppID:     chal.AppID,
+	})
+	require.NoError(t, err)
+
+	_, err = srv.Auth().authenticateUser(ctx, AuthenticateUserRequest{
+		Username: u.username,
+		U2F: &U2FSignResponseCreds{
+			SignResponse: *u2f,
+		},
+	})
+	require.NoError(t, err)
+
+	// Try authenticating with the previously set up otp device.
+	newOTP, err := totp.GenerateCode(otpKey, srv.Clock().Now().Add(30*time.Second))
+	require.NoError(t, err)
+	_, err = srv.Auth().authenticateUser(ctx, AuthenticateUserRequest{
+		Username: u.username,
+		OTP: &OTPCreds{
+			Password: u.password,
+			Token:    newOTP,
+		},
+	})
+	require.NoError(t, err)
 }
 
 // TestChangePasswordWithRecoveryTokenAndOTP tests a scenario where
-// user has an accout with a password and totp but lost their password and user
+// user has an accout with a password and totp but forgot their password and user
 // goes through the flow to reset password.
 func TestChangePasswordWithRecoveryTokenAndOTP(t *testing.T) {
 	srv := newTestTLSServer(t)
@@ -237,16 +327,18 @@ func TestChangePasswordWithRecoveryTokenAndOTP(t *testing.T) {
 	defer modules.SetModules(defaultModules)
 	modules.SetModules(&testWithCloudModules{})
 
+	// User starts with an account with a password and totp.
 	u, err := createUserAuthCreds(srv, "otp")
 	require.NoError(t, err)
 
+	// Get access to begin recovery.
 	startToken, err := srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
-		Username:            u.username,
-		RecoveryCode:        []byte(u.recoveryCodes[0]),
-		IsResetSecondFactor: false,
+		Username:     u.username,
+		RecoveryCode: []byte(u.recoveryCodes[0]),
+		RecoverType:  types.RecoverType_RECOVER_PASSWORD,
 	})
 	require.NoError(t, err)
-	require.Equal(t, types.KindRecoverPassword, startToken.GetSubKind())
+	require.Equal(t, ResetPasswordTokenRecoveryStart, startToken.GetSubKind())
 
 	// Get new otp code
 	mfas, err := srv.Auth().GetMFADevices(ctx, u.username)
@@ -255,17 +347,18 @@ func TestChangePasswordWithRecoveryTokenAndOTP(t *testing.T) {
 	newOTP, err := totp.GenerateCode(mfas[0].GetTotp().Key, srv.Clock().Now().Add(30*time.Second))
 	require.NoError(t, err)
 
+	// Get access to change password.
 	approvedToken, err := srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
-		TokenID:           startToken.GetName(),
-		Username:          startToken.GetUser(),
-		SecondFactorToken: newOTP,
+		TokenID:  startToken.GetName(),
+		Username: startToken.GetUser(),
+		AuthCred: &proto.AuthenticateUserWithRecoveryTokenRequest_SecondFactorToken{SecondFactorToken: newOTP},
 	})
 	require.NoError(t, err)
-	require.Equal(t, types.KindRecoverPasswordApproved, approvedToken.GetSubKind())
+	require.Equal(t, ResetPasswordTokenRecoveryApproved, approvedToken.GetSubKind())
 
-	// Change password
+	// Change password.
 	newPassword := []byte("some-new-password")
-	res2, err := srv.Auth().ChangePasswordOrSecondFactor(ctx, &proto.ChangeUserAuthCredWithTokenRequest{
+	res2, err := srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
 		TokenID:  approvedToken.GetName(),
 		Password: newPassword,
 	})
@@ -282,7 +375,7 @@ func TestChangePasswordWithRecoveryTokenAndOTP(t *testing.T) {
 }
 
 // TestChangePasswordWithRecoveryTokenAndU2F tests a scenario where
-// user has an accout with a password and u2f key but lost their password and user
+// user has an accout with a password and u2f key but forgot their password and user
 // goes through the flow to reset password.
 func TestChangePasswordWithRecoveryTokenAndU2F(t *testing.T) {
 	srv := newTestTLSServer(t)
@@ -292,13 +385,15 @@ func TestChangePasswordWithRecoveryTokenAndU2F(t *testing.T) {
 	defer modules.SetModules(defaultModules)
 	modules.SetModules(&testWithCloudModules{})
 
+	// User starts with an account with a password and u2f.
 	u, err := createUserAuthCreds(srv, "u2f")
 	require.NoError(t, err)
 
+	// Get access to start recovery.
 	startToken, err := srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
-		Username:            u.username,
-		RecoveryCode:        []byte(u.recoveryCodes[0]),
-		IsResetSecondFactor: false,
+		Username:     u.username,
+		RecoveryCode: []byte(u.recoveryCodes[0]),
+		RecoverType:  types.RecoverType_RECOVER_PASSWORD,
 	})
 	require.NoError(t, err)
 
@@ -316,20 +411,21 @@ func TestChangePasswordWithRecoveryTokenAndU2F(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// Get access to change password.
 	approvedToken, err := srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
 		TokenID:  startToken.GetName(),
 		Username: startToken.GetUser(),
-		U2FSignResponse: &proto.U2FResponse{
+		AuthCred: &proto.AuthenticateUserWithRecoveryTokenRequest_U2FSignResponse{U2FSignResponse: &proto.U2FResponse{
 			KeyHandle:  u2f.KeyHandle,
 			ClientData: u2f.ClientData,
 			Signature:  u2f.SignatureData,
-		},
+		}},
 	})
 	require.NoError(t, err)
 
-	// Change password
+	// Change password.
 	newPassword := []byte("some-new-password")
-	res2, err := srv.Auth().ChangePasswordOrSecondFactor(ctx, &proto.ChangeUserAuthCredWithTokenRequest{
+	res2, err := srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
 		TokenID:  approvedToken.GetName(),
 		Password: newPassword,
 	})
@@ -345,7 +441,10 @@ func TestChangePasswordWithRecoveryTokenAndU2F(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAccountRecoveryLock(t *testing.T) {
+// TestLockWhenMaxFailedVerifyingRecoveryCode tests that user gets locked from login
+// and from further recovery attempts when reaching max recovery attempt from providing
+// invalid recovery codes.
+func TestLockWhenMaxFailedVerifyingRecoveryCode(t *testing.T) {
 	srv := newTestTLSServer(t)
 	ctx := context.Background()
 
@@ -356,28 +455,22 @@ func TestAccountRecoveryLock(t *testing.T) {
 	u, err := createUserAuthCreds(srv, "otp")
 	require.NoError(t, err)
 
-	// Test invalid recovery codes locks user from further attempts at validating a recovery code.
-	for i := 1; i <= types.MaxRecoveryAttempts; i++ {
+	// Trigger max failed recovery attempts.
+	for i := 1; i <= defaults.MaxRecoveryAttempts; i++ {
 		_, err = srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
 			Username:     u.username,
 			RecoveryCode: []byte("invalid-code"),
 		})
 		require.Error(t, err)
 
-		if i == types.MaxRecoveryAttempts {
-			require.True(t, trace.IsAccessDenied(err))
+		// The third failed attempt should return error.
+		if i == defaults.MaxRecoveryAttempts {
 			require.Contains(t, err.Error(), AccountRecoveryEmailMarker)
+			require.True(t, trace.IsAccessDenied(err))
 		}
 	}
 
-	// Make sure its locked.
-	_, err = srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
-		Username:     u.username,
-		RecoveryCode: []byte("invalid-code"),
-	})
-	require.True(t, trace.IsAccessDenied(err))
-
-	// Test login and recovery attempt is actually locked.
+	// Test user account is locked and recovery attempt is locked.
 	user, err := srv.Auth().GetUser(u.username, false)
 	require.NoError(t, err)
 	require.True(t, user.GetStatus().IsLocked)
@@ -385,9 +478,61 @@ func TestAccountRecoveryLock(t *testing.T) {
 	require.False(t, user.GetStatus().RecoveryAttemptLockExpires.IsZero())
 }
 
+// TestLockWhenMaxFailedAuthenticatingWithToken tests if token is deleted and
+// user is login locked if users reach max recovery attempt from providing invalid password
+// or a second factor.
+func TestLockWhenMaxFailedAuthenticatingWithToken(t *testing.T) {
+	srv := newTestTLSServer(t)
+	ctx := context.Background()
+
+	defaultModules := modules.GetModules()
+	defer modules.SetModules(defaultModules)
+	modules.SetModules(&testWithCloudModules{})
+
+	u, err := createUserAuthCreds(srv, "otp")
+	require.NoError(t, err)
+
+	resetToken, err := srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
+		Username:     u.username,
+		RecoveryCode: []byte(u.recoveryCodes[0]),
+	})
+	require.NoError(t, err)
+
+	// Trigger max failed recovery attempts.
+	for i := 1; i <= defaults.MaxRecoveryAttempts; i++ {
+		_, err = srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
+			TokenID:  resetToken.GetName(),
+			Username: resetToken.GetUser(),
+			AuthCred: &proto.AuthenticateUserWithRecoveryTokenRequest_SecondFactorToken{SecondFactorToken: "invalid-token"},
+		})
+		require.Error(t, err)
+
+		// The third failed attempt should return error.
+		if i == defaults.MaxRecoveryAttempts {
+			require.Contains(t, err.Error(), AccountRecoveryEmailMarker)
+		}
+	}
+
+	// Test after lock, token is deleted.
+	_, err = srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
+		TokenID:  resetToken.GetName(),
+		Username: resetToken.GetUser(),
+		AuthCred: &proto.AuthenticateUserWithRecoveryTokenRequest_SecondFactorToken{SecondFactorToken: "invalid-token"},
+	})
+	require.Error(t, err)
+	require.True(t, trace.IsNotFound(err))
+
+	// Test login is actually locked.
+	user, err := srv.Auth().GetUser(u.username, false)
+	require.NoError(t, err)
+	require.True(t, user.GetStatus().IsLocked)
+	require.True(t, user.GetStatus().RecoveryAttemptLockExpires.IsZero())
+	require.False(t, user.GetStatus().LockExpires.IsZero())
+}
+
 // TestRecoveryAllowedWithLoginLocked tests a user can still recover if they first
 // locked themselves from max failed login attempts. After user successfully changes
-// their auth cred, the locks are reset so user can login immediately after.
+// their auth cred, the locks should be reset so user can login immediately after.
 func TestRecoveryAllowedWithLoginLocked(t *testing.T) {
 	srv := newTestTLSServer(t)
 	ctx := context.Background()
@@ -415,18 +560,18 @@ func TestRecoveryAllowedWithLoginLocked(t *testing.T) {
 		}
 	}
 
-	// Test login is locked but not recovery attempt.
+	// Test login is locked.
 	user, err := srv.Auth().GetUser(u.username, false)
 	require.NoError(t, err)
 	require.True(t, user.GetStatus().IsLocked)
-	require.False(t, user.GetStatus().LockExpires.IsZero())
 	require.True(t, user.GetStatus().RecoveryAttemptLockExpires.IsZero())
+	require.False(t, user.GetStatus().LockExpires.IsZero())
 
 	// Still allow recovery.
 	resetToken, err := srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
-		Username:            u.username,
-		RecoveryCode:        []byte(u.recoveryCodes[0]),
-		IsResetSecondFactor: false,
+		Username:     u.username,
+		RecoveryCode: []byte(u.recoveryCodes[0]),
+		RecoverType:  types.RecoverType_RECOVER_PASSWORD,
 	})
 	require.NoError(t, err)
 
@@ -438,22 +583,22 @@ func TestRecoveryAllowedWithLoginLocked(t *testing.T) {
 	require.NoError(t, err)
 
 	resetToken, err = srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
-		TokenID:           resetToken.GetName(),
-		Username:          resetToken.GetUser(),
-		SecondFactorToken: newOTP,
+		TokenID:  resetToken.GetName(),
+		Username: resetToken.GetUser(),
+		AuthCred: &proto.AuthenticateUserWithRecoveryTokenRequest_SecondFactorToken{SecondFactorToken: newOTP},
 	})
 	require.NoError(t, err)
 
-	// Change password to trigger unlock.
+	// Recover password to trigger unlock.
 	newPassword := []byte("some-new-password")
-	res2, err := srv.Auth().ChangePasswordOrSecondFactor(ctx, &proto.ChangeUserAuthCredWithTokenRequest{
+	res2, err := srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
 		TokenID:  resetToken.GetName(),
 		Password: newPassword,
 	})
 	require.NoError(t, err)
 	require.Len(t, res2.RecoveryCodes, 3)
 
-	// Test login locks are removed after successful changing of password.
+	// Test login locks are removed after successful recovering of password.
 	user, err = srv.Auth().GetUser(u.username, false)
 	require.NoError(t, err)
 	require.False(t, user.GetStatus().IsLocked)
@@ -461,9 +606,9 @@ func TestRecoveryAllowedWithLoginLocked(t *testing.T) {
 	require.True(t, user.GetStatus().RecoveryAttemptLockExpires.IsZero())
 }
 
-// TestResetTokenDeleteAfterMaxFailedAttempt tests if the reset token gets deleted and
-// user is login locked if users reach max failed auth attempt with a reset token.
-func TestResetTokenDeleteAfterMaxFailedAttempt(t *testing.T) {
+// TestInvalidRecoveryTokenTypes test checks are placed to ensure the
+// correct type of token is being used.
+func TestInvalidRecoveryTokenTypes(t *testing.T) {
 	srv := newTestTLSServer(t)
 	ctx := context.Background()
 
@@ -474,105 +619,94 @@ func TestResetTokenDeleteAfterMaxFailedAttempt(t *testing.T) {
 	u, err := createUserAuthCreds(srv, "otp")
 	require.NoError(t, err)
 
-	resetToken, err := srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
-		Username:            u.username,
-		RecoveryCode:        []byte(u.recoveryCodes[0]),
-		IsResetSecondFactor: false,
-	})
-	require.NoError(t, err)
-
-	// Test max failed attempt to trigger deleting of token and locking user.
-	for i := 1; i <= types.MaxRecoveryAttempts; i++ {
-		_, err = srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
-			TokenID:           resetToken.GetName(),
-			Username:          resetToken.GetUser(),
-			SecondFactorToken: "invalid-token",
-		})
-		require.Error(t, err)
-
-		if i == types.MaxRecoveryAttempts {
-			require.Contains(t, err.Error(), AccountRecoveryEmailMarker)
-		}
-	}
-
-	// Test verifying reset token after lock, returns a not found error.
-	_, err = srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
-		TokenID:           resetToken.GetName(),
-		Username:          resetToken.GetUser(),
-		SecondFactorToken: "invalid-token",
-	})
-	require.Error(t, err)
-	require.True(t, trace.IsNotFound(err))
-
-	// Test only login is actually locked.
-	user, err := srv.Auth().GetUser(u.username, false)
-	require.NoError(t, err)
-	require.True(t, user.GetStatus().IsLocked)
-	require.False(t, user.GetStatus().LockExpires.IsZero())
-	require.True(t, user.GetStatus().RecoveryAttemptLockExpires.IsZero())
-}
-
-func TestRecoveryInvalidEmailAndTokenType(t *testing.T) {
-	srv := newTestTLSServer(t)
-	ctx := context.Background()
-
-	defaultModules := modules.GetModules()
-	defer modules.SetModules(defaultModules)
-	modules.SetModules(&testWithCloudModules{})
-
-	u, err := createUserAuthCreds(srv, "otp")
-	require.NoError(t, err)
-
-	// Test invalid email address as username.
-	_, err = srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
-		Username:     "invalid-username",
-		RecoveryCode: []byte(u.recoveryCodes[0]),
-	})
-	require.Error(t, err)
-
+	// Create a non recovery token (wrong token).
 	wrongToken, err := srv.Auth().CreateResetPasswordToken(ctx, CreateResetPasswordTokenRequest{
 		Name: u.username,
-		Type: types.ResetPasswordTokenInvite,
+		Type: ResetPasswordTokenInvite,
 	})
+	require.NoError(t, err)
 
 	// Test wrong token type for authenticating user.
 	_, err = srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
-		TokenID:           wrongToken.GetName(),
-		Username:          wrongToken.GetUser(),
-		SecondFactorToken: "should-not-matter",
+		TokenID:  wrongToken.GetName(),
+		Username: wrongToken.GetUser(),
 	})
-	require.Contains(t, err.Error(), "invalid token subkind")
+	require.Contains(t, err.Error(), "invalid token")
 
 	// Test wrong token type for changing a user auth cred.
-	_, err = srv.Auth().ChangePasswordOrSecondFactor(ctx, &proto.ChangeUserAuthCredWithTokenRequest{
-		TokenID:           wrongToken.GetName(),
-		SecondFactorToken: "should-not-matter",
+	_, err = srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
+		TokenID: wrongToken.GetName(),
 	})
-	require.Contains(t, err.Error(), "invalid token subkind")
+	require.Contains(t, err.Error(), "invalid token")
 
-	// Test recovery token with wrong subkind for authenticating user.
-	wrongToken, err = srv.Auth().createRecoveryToken(ctx, CreateResetPasswordTokenRequest{
-		Name: u.username,
-		Type: types.ResetPasswordTokenRecoveryApproved,
-	}, types.KindRecoverPasswordApproved)
+	// Test giving recovery start token to last step in recovery returns error (expects an recovery approved token).
+	wrongToken, err = srv.Auth().createRecoveryToken(ctx, u.username, ResetPasswordTokenRecoveryStart, 0)
+	require.NoError(t, err)
+	_, err = srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
+		TokenID: wrongToken.GetName(),
+	})
+	require.Contains(t, err.Error(), "invalid token")
 
+	// Test giving recovery approved token to authentication step returns error (expects a recovery start token).
+	wrongToken, err = srv.Auth().createRecoveryToken(ctx, u.username, ResetPasswordTokenRecoveryApproved, 0)
+	require.NoError(t, err)
 	_, err = srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
-		TokenID:           wrongToken.GetName(),
-		Username:          wrongToken.GetUser(),
-		SecondFactorToken: "should-not-matter",
+		TokenID:  wrongToken.GetName(),
+		Username: wrongToken.GetUser(),
 	})
-	require.Contains(t, err.Error(), "invalid token subkind")
+	require.Contains(t, err.Error(), "invalid token")
+}
 
-	// Test recovery token with wrong subkind for changing a user auth cred.
-	wrongToken, err = srv.Auth().createRecoveryToken(ctx, CreateResetPasswordTokenRequest{
+// TestInvalidUserAuthCred tests that checks are placed to ensure the correct
+// authentication cred is being changed (password) or added (a new second factor).
+func TestInvalidUserAuthCred(t *testing.T) {
+	srv := newTestTLSServer(t)
+	ctx := context.Background()
+
+	defaultModules := modules.GetModules()
+	defer modules.SetModules(defaultModules)
+	modules.SetModules(&testWithCloudModules{})
+
+	u, err := createUserAuthCreds(srv, "otp")
+	require.NoError(t, err)
+
+	// Create a non recovery token (wrong token).
+	wrongToken, err := srv.Auth().CreateResetPasswordToken(ctx, CreateResetPasswordTokenRequest{
 		Name: u.username,
-		Type: types.ResetPasswordTokenRecoveryStart,
-	}, types.KindRecoverPassword)
-	_, err = srv.Auth().ChangePasswordOrSecondFactor(ctx, &proto.ChangeUserAuthCredWithTokenRequest{
-		TokenID:           wrongToken.GetName(),
-		SecondFactorToken: "should-not-matter",
+		Type: ResetPasswordTokenInvite,
 	})
-	require.Contains(t, err.Error(), "invalid token subkind")
+	require.NoError(t, err)
+
+	// Test wrong token type for authenticating user.
+	_, err = srv.Auth().AuthenticateUserWithRecoveryToken(ctx, &proto.AuthenticateUserWithRecoveryTokenRequest{
+		TokenID:  wrongToken.GetName(),
+		Username: wrongToken.GetUser(),
+	})
+	require.Contains(t, err.Error(), "invalid token")
+
+	// Test wrong token type for changing a user auth cred.
+	_, err = srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
+		TokenID: wrongToken.GetName(),
+	})
+	require.Contains(t, err.Error(), "invalid token")
+
+	// Test providing password, when token expects totp
+	token, err := srv.Auth().createRecoveryToken(ctx, u.username, ResetPasswordTokenRecoveryApproved, types.RecoverType_RECOVER_TOTP)
+	require.NoError(t, err)
+	_, err = srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{TokenID: token.GetName()})
+	require.Contains(t, err.Error(), "second factor token")
+
+	// Test providing u2f, when token expects totp
+	token, err = srv.Auth().createRecoveryToken(ctx, u.username, ResetPasswordTokenRecoveryApproved, types.RecoverType_RECOVER_U2F)
+	require.NoError(t, err)
+	_, err = srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{TokenID: token.GetName()})
+	require.Contains(t, err.Error(), "u2f")
+
+	// Test providing otp, when token expects u2f
+	token, err = srv.Auth().createRecoveryToken(ctx, u.username, ResetPasswordTokenRecoveryApproved, types.RecoverType_RECOVER_PASSWORD)
+	require.NoError(t, err)
+	_, err = srv.Auth().RecoverAccountWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{TokenID: token.GetName()})
+	require.Contains(t, err.Error(), "password")
 }
 
 type userAuthCreds struct {
@@ -615,14 +749,14 @@ func createUserAuthCreds(srv *TestTLSServer, secondFactor string) (*userAuthCred
 		return nil, trace.Wrap(err)
 	}
 
-	var res *types.ChangePasswordWithTokenResponse
+	var res *proto.ChangePasswordWithTokenResponse
 	if secondFactor == "otp" {
 		otp, err := getOTPCode(srv, resetToken.GetName())
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
 
-		res, err = srv.Auth().ChangePasswordWithToken(ctx, &proto.ChangeUserAuthCredWithTokenRequest{
+		res, err = srv.Auth().ChangePasswordWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
 			TokenID:           resetToken.GetName(),
 			Password:          password,
 			SecondFactorToken: otp,
@@ -636,7 +770,11 @@ func createUserAuthCreds(srv *TestTLSServer, secondFactor string) (*userAuthCred
 	if secondFactor == "u2f" {
 		var u2fRegResp *proto.U2FRegisterResponse
 		u2fRegResp, u2fKey, err = getMockedU2FAndRegisterRes(srv, resetToken.GetName())
-		res, err = srv.Auth().ChangePasswordWithToken(ctx, &proto.ChangeUserAuthCredWithTokenRequest{
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+
+		res, err = srv.Auth().ChangePasswordWithToken(ctx, &proto.NewUserAuthCredWithTokenRequest{
 			TokenID:             resetToken.GetName(),
 			Password:            password,
 			U2FRegisterResponse: u2fRegResp,

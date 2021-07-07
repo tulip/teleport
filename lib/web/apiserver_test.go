@@ -1461,7 +1461,7 @@ func testU2FLogin(t *testing.T, secondFactor constants.SecondFactorType) {
 	env.proxies[0].createUser(ctx, t, "bob", "root", "password", "")
 
 	// create password change token
-	token, err := env.server.Auth().CreateResetPasswordToken(context.TODO(), auth.CreateResetPasswordTokenRequest{
+	token, err := env.server.Auth().CreateResetPasswordToken(ctx, auth.CreateResetPasswordTokenRequest{
 		Name: "bob",
 	})
 	require.NoError(t, err)
@@ -1475,7 +1475,7 @@ func testU2FLogin(t *testing.T, secondFactor constants.SecondFactorType) {
 	require.NoError(t, err)
 
 	tempPass := []byte("abc123")
-	_, err = env.proxies[0].client.ChangePasswordWithToken(context.TODO(), &apiProto.ChangeUserAuthCredWithTokenRequest{
+	_, err = env.proxies[0].client.ChangePasswordWithToken(ctx, &apiProto.NewUserAuthCredWithTokenRequest{
 		TokenID: token.GetName(),
 		U2FRegisterResponse: &apiProto.U2FRegisterResponse{
 			RegistrationData: u2fRegResp.RegistrationData,

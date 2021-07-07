@@ -577,16 +577,13 @@ func (c *Client) CreateResetPasswordToken(ctx context.Context, req *proto.Create
 }
 
 // ChangePasswordWithToken changes user password with a reset password token.
-func (c *Client) ChangePasswordWithToken(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (*types.ChangePasswordWithTokenResponse, error) {
+func (c *Client) ChangePasswordWithToken(ctx context.Context, req *proto.NewUserAuthCredWithTokenRequest) (*proto.ChangePasswordWithTokenResponse, error) {
 	res, err := c.grpc.ChangePasswordWithToken(ctx, req, c.callOpts...)
 	if err != nil {
 		return nil, trail.FromGRPC(err)
 	}
 
-	return &types.ChangePasswordWithTokenResponse{
-		WebSession:    res.GetWebSession(),
-		RecoveryCodes: res.GetRecoveryCodes(),
-	}, nil
+	return res, nil
 }
 
 // VerifyRecoveryCode verifies a given recovery code.
@@ -610,9 +607,10 @@ func (c *Client) AuthenticateUserWithRecoveryToken(ctx context.Context, req *pro
 	return res, nil
 }
 
-// ChangePasswordOrSecondFactor resets a user's auth cred as part of the recovery flow.
-func (c *Client) ChangePasswordOrSecondFactor(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (*proto.ChangePasswordOrSecondFactorResponse, error) {
-	res, err := c.grpc.ChangePasswordOrSecondFactor(ctx, req, c.callOpts...)
+// RecoverAccountWithToken is the last step in the recovery flow that either changes a user
+// password or adds a new mfa device depending on the request.
+func (c *Client) RecoverAccountWithToken(ctx context.Context, req *proto.NewUserAuthCredWithTokenRequest) (*proto.RecoverAccountWithTokenResponse, error) {
+	res, err := c.grpc.RecoverAccountWithToken(ctx, req, c.callOpts...)
 	if err != nil {
 		return nil, trail.FromGRPC(err)
 	}

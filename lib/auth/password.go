@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
-	"fmt"
+	"net/mail"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -40,20 +40,23 @@ type ChangePasswordWithTokenRequest struct {
 }
 
 // ChangePasswordWithToken changes password with a password reset token.
-func (s *Server) ChangePasswordWithToken(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (*types.ChangePasswordWithTokenResponse, error) {
+func (s *Server) ChangePasswordWithToken(ctx context.Context, req *proto.NewUserAuthCredWithTokenRequest) (*proto.ChangePasswordWithTokenResponse, error) {
 	user, err := s.changePasswordWithToken(ctx, req)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	// Only cloud accounts with 2nd factor's gets recovery codes.
 	var recoveryCodes []string
 	recoveryAllowed := true
-	if err := s.isAccountRecoveryAllowed(ctx); err != nil {
-		if !trace.IsAccessDenied(err) {
-			return nil, trace.Wrap(err)
+
+	// Only user's with email as their username and running cloud can receive recovery codes.
+	if _, err := mail.ParseAddress(user.GetName()); err == nil {
+		if err := s.isAccountRecoveryAllowed(ctx); err != nil {
+			if !trace.IsAccessDenied(err) {
+				return nil, trace.Wrap(err)
+			}
+			recoveryAllowed = false
 		}
-		recoveryAllowed = false
 	}
 
 	if recoveryAllowed && (req.SecondFactorToken != "" || req.U2FRegisterResponse != nil) {
@@ -63,12 +66,17 @@ func (s *Server) ChangePasswordWithToken(ctx context.Context, req *proto.ChangeU
 		}
 	}
 
-	sess, err := s.createUserWebSession(ctx, user)
+	webSession, err := s.createUserWebSession(ctx, user)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	return &types.ChangePasswordWithTokenResponse{
+	sess, ok := webSession.(*types.WebSessionV2)
+	if !ok {
+		return nil, trace.BadParameter("unexpected WebSessionV2 type %T", sess)
+	}
+
+	return &proto.ChangePasswordWithTokenResponse{
 		WebSession:    sess,
 		RecoveryCodes: recoveryCodes,
 	}, nil
@@ -370,7 +378,7 @@ func (s *Server) getOTPType(user string) (teleport.OTPType, error) {
 	return teleport.HOTP, nil
 }
 
-func (s *Server) changePasswordWithToken(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (types.User, error) {
+func (s *Server) changePasswordWithToken(ctx context.Context, req *proto.NewUserAuthCredWithTokenRequest) (types.User, error) {
 	// Get cluster configuration and check if local auth is allowed.
 	authPref, err := s.GetAuthPreference(ctx)
 	if err != nil {
@@ -387,7 +395,6 @@ func (s *Server) changePasswordWithToken(ctx context.Context, req *proto.ChangeU
 
 	// Check if token exists.
 	token, err := s.GetResetPasswordToken(ctx, req.TokenID)
-	fmt.Println("------ here? ", err)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -423,7 +430,7 @@ func (s *Server) changePasswordWithToken(ctx context.Context, req *proto.ChangeU
 	return user, nil
 }
 
-func (s *Server) changeUserSecondFactor(req *proto.ChangeUserAuthCredWithTokenRequest, token types.ResetPasswordToken) error {
+func (s *Server) changeUserSecondFactor(req *proto.NewUserAuthCredWithTokenRequest, token types.ResetPasswordToken) error {
 	ctx := context.TODO()
 	username := token.GetUser()
 	cap, err := s.GetAuthPreference(ctx)

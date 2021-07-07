@@ -1608,7 +1608,7 @@ func (a *ServerWithRoles) RotateResetPasswordTokenSecrets(ctx context.Context, t
 }
 
 // ChangePasswordWithToken changes password with a password reset token.
-func (a *ServerWithRoles) ChangePasswordWithToken(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (*types.ChangePasswordWithTokenResponse, error) {
+func (a *ServerWithRoles) ChangePasswordWithToken(ctx context.Context, req *proto.NewUserAuthCredWithTokenRequest) (*proto.ChangePasswordWithTokenResponse, error) {
 	// Token is it's own authentication, no need to double check.
 	return a.authServer.ChangePasswordWithToken(ctx, req)
 }
@@ -1626,10 +1626,11 @@ func (a *ServerWithRoles) AuthenticateUserWithRecoveryToken(ctx context.Context,
 	return a.authServer.AuthenticateUserWithRecoveryToken(ctx, req)
 }
 
-// ChangePasswordOrSecondFactor recover's a user's account by re-setting their password or second factor.
-func (a *ServerWithRoles) ChangePasswordOrSecondFactor(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (*proto.ChangePasswordOrSecondFactorResponse, error) {
+// RecoverAccountWithToken is the last step in the recovery flow that either changes a user
+// password or adds a new mfa device depending on the request.
+func (a *ServerWithRoles) RecoverAccountWithToken(ctx context.Context, req *proto.NewUserAuthCredWithTokenRequest) (*proto.RecoverAccountWithTokenResponse, error) {
 	// Token is its own authentication, no need to double check.
-	return a.authServer.ChangePasswordOrSecondFactor(ctx, req)
+	return a.authServer.RecoverAccountWithToken(ctx, req)
 }
 
 // CreateUser inserts a new user entry in a backend.

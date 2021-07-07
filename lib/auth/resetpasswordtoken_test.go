@@ -135,7 +135,7 @@ func TestCreateResetPasswordTokenErrors(t *testing.T) {
 			req: CreateResetPasswordTokenRequest{
 				Name: username,
 				TTL:  defaults.MaxSignupTokenTTL + time.Hour,
-				Type: types.ResetPasswordTokenInvite,
+				Type: ResetPasswordTokenInvite,
 			},
 		},
 	}
@@ -230,7 +230,7 @@ func TestCreateResetPasswordTokenTypeRecovery(t *testing.T) {
 
 	req := CreateResetPasswordTokenRequest{
 		Name: username,
-		Type: types.ResetPasswordTokenRecoveryStart,
+		Type: ResetPasswordTokenRecoveryStart,
 	}
 
 	startToken, err := srv.Auth().CreateResetPasswordToken(ctx, req)
@@ -240,11 +240,11 @@ func TestCreateResetPasswordTokenTypeRecovery(t *testing.T) {
 	// Test token uses correct byte length.
 	bytes, err := hex.DecodeString(startToken.GetName())
 	require.NoError(t, err)
-	require.Len(t, bytes, types.RecoveryTokenLenBytes)
+	require.Len(t, bytes, RecoveryTokenLenBytes)
 
 	req = CreateResetPasswordTokenRequest{
 		Name: username,
-		Type: types.ResetPasswordTokenRecoveryApproved,
+		Type: ResetPasswordTokenRecoveryApproved,
 	}
 
 	approvedToken, err := srv.Auth().CreateResetPasswordToken(ctx, req)
@@ -253,7 +253,7 @@ func TestCreateResetPasswordTokenTypeRecovery(t *testing.T) {
 
 	bytes, err = hex.DecodeString(approvedToken.GetName())
 	require.NoError(t, err)
-	require.Len(t, bytes, types.RecoveryTokenLenBytes)
+	require.Len(t, bytes, RecoveryTokenLenBytes)
 }
 
 type debugAuth struct {

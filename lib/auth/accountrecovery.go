@@ -19,11 +19,9 @@ package auth
 import (
 	"context"
 	"fmt"
-	"net/mail"
 	"strings"
 
 	"github.com/gravitational/teleport/api/client/proto"
-	"github.com/gravitational/teleport/api/constants"
 	"github.com/gravitational/teleport/api/types"
 	apievents "github.com/gravitational/teleport/api/types/events"
 	apiutils "github.com/gravitational/teleport/api/utils"
@@ -37,9 +35,15 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// AccountRecoveryEmailMarker is a marker in error messages to send emails to users.
-// Also serves to send email one time.
-const AccountRecoveryEmailMarker = "an email will be sent notifying user"
+const (
+	numOfRecoveryCodes     = 3
+	numWordsInRecoveryCode = 8
+	accountLockedMsg       = "user has exceeded maximum failed account recovery attempts"
+
+	// AccountRecoveryEmailMarker is a marker in error messages to send emails to users.
+	// Also serves to send email one time.
+	AccountRecoveryEmailMarker = "an email will be sent notifying user"
+)
 
 // fakeRecoveryCodeHash is bcrypt hash for "fake-barbaz x 8"
 var fakeRecoveryCodeHash = []byte(`$2a$10$c2.h4pF9AA25lbrWo6U0D.ZmnYpFDaNzN3weNNYNC3jAkYEX9kpzu`)
@@ -48,21 +52,13 @@ var fakeRecoveryCodeHash = []byte(`$2a$10$c2.h4pF9AA25lbrWo6U0D.ZmnYpFDaNzN3weNN
 // If an existing user fails to provide a correct code some number of times, user's account is temporarily locked
 // from further recovery attempts and from logging in.
 //
-// Returns a reset token, subkind set to recovery.
+// Returns a user token, subkind set to recovery.
 func (s *Server) VerifyRecoveryCode(ctx context.Context, req *proto.VerifyRecoveryCodeRequest) (types.ResetPasswordToken, error) {
 	if err := s.isAccountRecoveryAllowed(ctx); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	if req.GetUsername() == "" || req.GetRecoveryCode() == nil {
-		return nil, trace.BadParameter("missing username or recovery code")
-	}
-
-	if _, err := mail.ParseAddress(req.GetUsername()); err != nil {
-		return nil, trace.Wrap(err, "invalid email address: %q", req.GetUsername())
-	}
-
-	if err := s.withRecoveryAttemptCounter(ctx, req.GetRecoveryCode(), req.GetUsername()); err != nil {
+	if err := s.verifyCodeWithRecoveryLock(ctx, req.GetUsername(), req.GetRecoveryCode()); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
@@ -71,17 +67,7 @@ func (s *Server) VerifyRecoveryCode(ctx context.Context, req *proto.VerifyRecove
 		return nil, trace.Wrap(err)
 	}
 
-	newTokenReq := CreateResetPasswordTokenRequest{
-		Name: req.Username,
-		Type: types.ResetPasswordTokenRecoveryStart,
-	}
-
-	subKind := types.KindRecoverPassword
-	if req.IsResetSecondFactor {
-		subKind = types.KindRecoverSecondFactor
-	}
-
-	token, err := s.createRecoveryToken(ctx, newTokenReq, subKind)
+	token, err := s.createRecoveryToken(ctx, req.GetUsername(), ResetPasswordTokenRecoveryStart, req.GetRecoverType())
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -89,31 +75,100 @@ func (s *Server) VerifyRecoveryCode(ctx context.Context, req *proto.VerifyRecove
 	return s.GetResetPasswordToken(ctx, token.GetName())
 }
 
-func (s *Server) verifyRecoveryCode(ctx context.Context, user string, givenToken []byte) error {
+// verifyCodeWithRecoveryLock counts number of failed attempts at providing a valid recovery code.
+// After max failed attempt, user is temporarily locked from further attempts at recovering and locked from
+// logging in. This functions similar to WithUserLock.
+func (s *Server) verifyCodeWithRecoveryLock(ctx context.Context, username string, recoveryCode []byte) error {
+	user, err := s.Identity.GetUser(username, false)
+	if err != nil {
+		if trace.IsNotFound(err) {
+			// If user is not found, still authenticate. It should
+			// always return an error. This prevents username oracles and
+			// timing attacks.
+			return s.verifyRecoveryCode(ctx, username, recoveryCode)
+		}
+		return trace.Wrap(err)
+	}
+
+	status := user.GetStatus()
+	if status.IsLocked && status.RecoveryAttemptLockExpires.After(s.clock.Now().UTC()) {
+		return trace.AccessDenied("%v exceeds %v failed account recovery attempts, locked until %v",
+			user.GetName(), defaults.MaxRecoveryAttempts, apiutils.HumanTimeFormat(status.RecoveryAttemptLockExpires))
+	}
+
+	fnErr := s.verifyRecoveryCode(ctx, username, recoveryCode)
+	if fnErr == nil {
+		return nil
+	}
+
+	// Do not lock user in case if DB is flaky or down.
+	if trace.IsConnectionProblem(fnErr) {
+		return trace.Wrap(fnErr)
+	}
+
+	// Log failed attempt.
+	now := s.clock.Now().UTC()
+	attempt := types.RecoveryAttempt{Time: now, Expires: now.Add(defaults.AttemptTTL)}
+	if err := s.CreateUserRecoveryAttempt(ctx, username, attempt); err != nil {
+		log.Error(trace.DebugReport(err))
+		return trace.Wrap(fnErr)
+	}
+
+	attempts, err := s.Identity.GetUserRecoveryAttempts(ctx, username)
+	if err != nil {
+		log.Error(trace.DebugReport(err))
+		return trace.Wrap(fnErr)
+	}
+
+	if !types.LastFailedRecoveryAttempt(defaults.MaxRecoveryAttempts, attempts, now) {
+		log.Debugf("%v user has less than %v failed account recovery attempts", username, defaults.MaxRecoveryAttempts)
+		return trace.Wrap(fnErr)
+	}
+
+	// Reached max attempts.
+	lockUntil := s.clock.Now().UTC().Add(defaults.AccountLockInterval)
+	message := fmt.Sprintf("%v exceeds %v failed account recovery attempts, account locked until %v and %v",
+		username, defaults.MaxRecoveryAttempts, apiutils.HumanTimeFormat(lockUntil), AccountRecoveryEmailMarker)
+
+	log.Debug(message)
+
+	// Temp lock both user login and recovery attempts.
+	user.SetLockedFromRecoveryAttempt(lockUntil)
+	user.SetLocked(lockUntil, accountLockedMsg)
+
+	if err := s.Identity.UpsertUser(user); err != nil {
+		log.Error(trace.DebugReport(err))
+		return trace.Wrap(fnErr)
+	}
+
+	return trace.AccessDenied(message)
+}
+
+func (s *Server) verifyRecoveryCode(ctx context.Context, user string, givenCode []byte) error {
 	recovery, err := s.GetRecoveryCodes(ctx, user)
 	if err != nil && !trace.IsNotFound(err) {
 		return trace.Wrap(err)
 	}
 
-	var hashedTokens []types.RecoveryCode
+	var hashedCodes []types.RecoveryCode
 	userFound := true
-
 	if trace.IsNotFound(err) {
 		userFound = false
-		log.Debugf("Account recovery tokens for user %q not found, using fake hashes to mitigate timing attacks.", user)
-		hashedTokens = []types.RecoveryCode{{Value: fakeRecoveryCodeHash}, {Value: fakeRecoveryCodeHash}, {Value: fakeRecoveryCodeHash}}
+		log.Debugf("Account recovery codes for user %q not found, using fake hashes to mitigate timing attacks.", user)
+		hashedCodes = []types.RecoveryCode{{Value: fakeRecoveryCodeHash}, {Value: fakeRecoveryCodeHash}, {Value: fakeRecoveryCodeHash}}
 	} else {
-		hashedTokens = recovery.Codes
+		hashedCodes = recovery.Codes
 	}
 
-	tokenMatch := false
-	for i, token := range hashedTokens {
-		if err = bcrypt.CompareHashAndPassword(token.Value, givenToken); err == nil {
-			if !token.IsUsed && userFound {
-				tokenMatch = true
+	codeMatch := false
+	for i, code := range hashedCodes {
+		if err := bcrypt.CompareHashAndPassword(code.Value, givenCode); err == nil {
+			if !code.IsUsed && userFound {
+				codeMatch = true
 				// Mark matched token as used in backend so it can't be used again.
 				recovery.Codes[i].IsUsed = true
 				if err := s.UpsertRecoveryCodes(ctx, user, *recovery); err != nil {
+					log.Error(trace.DebugReport(err))
 					return trace.Wrap(err)
 				}
 				break
@@ -134,108 +189,34 @@ func (s *Server) verifyRecoveryCode(ctx context.Context, user string, givenToken
 		},
 	}
 
-	if !tokenMatch || !userFound {
+	if !codeMatch || !userFound {
 		event.Status.Success = false
 		event.Metadata.Code = events.RecoveryCodeUsedFailureCode
 		traceErr := trace.NotFound("user not found")
 
-		if !tokenMatch && userFound {
-			traceErr = trace.BadParameter("account recovery token did not match")
+		if userFound {
+			traceErr = trace.BadParameter("recovery code did not match")
 		}
 
 		event.Status.Error = traceErr.Error()
 		event.Status.UserMessage = traceErr.Error()
 
 		if err := s.emitter.EmitAuditEvent(s.closeCtx, event); err != nil {
-			log.WithFields(logrus.Fields{"user": user}).Warn("Failed to emit account recovery token used failed event.")
+			log.WithFields(logrus.Fields{"user": user}).Warn("Failed to emit account recovery code used failed event.")
 		}
 
-		return traceErr
+		return trace.BadParameter("invalid user or recovery code")
 	}
 
 	if err := s.emitter.EmitAuditEvent(s.closeCtx, event); err != nil {
-		log.WithFields(logrus.Fields{"user": user}).Warn("Failed to emit account recovery token used event.")
+		log.WithFields(logrus.Fields{"user": user}).Warn("Failed to emit account recovery code used event.")
 	}
 
 	return nil
 }
 
-// withRecoveryAttemptCounter counts number of failed attempts at providing a valid recovery code.
-// After max failed attempt, user is temporarily locked from further attempts at recovering and locked from
-// logging in. This functions similar to WithUserLock.
-func (a *Server) withRecoveryAttemptCounter(ctx context.Context, recoveryToken []byte, username string) error {
-	user, err := a.GetUser(username, false)
-	if err != nil {
-		if trace.IsNotFound(err) {
-			// If user is not found, still verify with fake tokens.
-			// It should always return an error. This prevents timing attacks.
-			return a.verifyRecoveryCode(ctx, username, recoveryToken)
-		}
-		return trace.Wrap(err)
-	}
-
-	status := user.GetStatus()
-	if status.IsLocked && status.RecoveryAttemptLockExpires.After(a.clock.Now().UTC()) {
-		return trace.AccessDenied("%v exceeds %v failed account recovery attempts, account locked until %v",
-			user.GetName(), types.MaxRecoveryAttempts, apiutils.HumanTimeFormat(status.LockExpires))
-	}
-
-	fnErr := a.verifyRecoveryCode(ctx, username, recoveryToken)
-	if fnErr == nil {
-		err = a.DeleteRecoveryAttempt(ctx, username)
-		if !trace.IsNotFound(err) {
-			return trace.Wrap(err)
-		}
-
-		return nil
-	}
-
-	// Do not lock user in case if DB is flaky or down.
-	if trace.IsConnectionProblem(fnErr) {
-		return trace.Wrap(fnErr)
-	}
-
-	// Count failed attempt and possibly lock user.
-	var attempt *types.RecoveryAttempt
-	attempt, err = a.GetRecoveryAttempt(ctx, username)
-	if err != nil {
-		if !trace.IsNotFound(err) {
-			return trace.Wrap(err)
-		}
-		attempt = &types.RecoveryAttempt{Created: a.GetClock().Now().UTC()}
-	}
-
-	attempt.Increment()
-	if attempt.Get() >= types.MaxRecoveryAttempts {
-		lockUntil := a.clock.Now().UTC().Add(defaults.AccountLockInterval)
-		message := fmt.Sprintf("%v exceeds %v failed account recovery attempts, account locked until %v and %v",
-			username, types.MaxRecoveryAttempts, apiutils.HumanTimeFormat(status.LockExpires), AccountRecoveryEmailMarker)
-
-		log.WithError(fnErr).Debug(message)
-
-		// Lock both recovery attempt and login attempts.
-		user.SetLocked(lockUntil, "user has exceeded maximum failed account recovery attempts")
-		user.SetLockedFromRecoveryAttempt(lockUntil)
-
-		if err := a.Identity.UpsertUser(user); err != nil {
-			log.Error(trace.DebugReport(err))
-			return trace.Wrap(fnErr)
-		}
-
-		return trace.AccessDenied(message)
-	}
-
-	log.Debugf("%v user has less than %v failed account recovery attempts", username, types.MaxRecoveryAttempts)
-
-	if err := a.UpsertRecoveryAttempt(ctx, username, attempt); err != nil {
-		log.Error(trace.DebugReport(err))
-	}
-
-	return trace.Wrap(fnErr)
-}
-
 // AuthenticateUserWithRecoveryToken authenticates user defined in token with either password or second factor.
-// When a user provides a valid auth cred, the recovery token will be deleted, and a verified token will be created
+// When a user provides a valid auth cred, the recovery token will be deleted, and an recovery approved token will be created
 // for use in next step in recovery flow.
 //
 // If a user fails to provide correct auth cred some number of times, the recovery token will be deleted and the user
@@ -245,21 +226,17 @@ func (s *Server) AuthenticateUserWithRecoveryToken(ctx context.Context, req *pro
 		return nil, trace.Wrap(err)
 	}
 
-	if req.TokenID == "" || req.Username == "" {
-		return nil, trace.BadParameter("missing tokenId or username")
-	}
-
-	if req.GetPassword() == nil && req.GetSecondFactorToken() == "" && req.GetU2FSignResponse() == nil {
-		return nil, trace.BadParameter("at least one authentication method is required")
-	}
-
 	token, err := s.GetResetPasswordToken(ctx, req.GetTokenID())
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	if err := token.CheckSubKindType(types.ResetPasswordTokenRecoveryStart); err != nil {
-		return nil, trace.Wrap(err)
+	if token.Expiry().Before(s.clock.Now().UTC()) {
+		return nil, trace.BadParameter("expired token")
+	}
+
+	if token.GetSubKind() != ResetPasswordTokenRecoveryStart {
+		return nil, trace.BadParameter("invalid token")
 	}
 
 	// This is to verify the username for emailing when user gets locked.
@@ -267,129 +244,114 @@ func (s *Server) AuthenticateUserWithRecoveryToken(ctx context.Context, req *pro
 		return nil, trace.BadParameter("invalid username")
 	}
 
-	if token.Expiry().Before(s.clock.Now().UTC()) {
-		return nil, trace.BadParameter("expired token")
-	}
-
 	// Begin authenticating user password or second factor.
-	switch {
-	case req.GetSecondFactorToken() != "":
-		if token.GetSubKind() == types.KindRecoverSecondFactor {
-			return nil, trace.BadParameter("user %q requested to recover second factor, expected password auth", token.GetUser())
-		}
-		return s.withResetTokenAuthAttemptCounter(ctx, token, func() error {
+	switch req.GetAuthCred().(type) {
+	case *proto.AuthenticateUserWithRecoveryTokenRequest_SecondFactorToken:
+		return s.authenticateUserWithRecoveryLock(ctx, token, func() error {
 			_, err := s.checkOTP(token.GetUser(), req.GetSecondFactorToken())
 			return err
 		})
 
-	case req.U2FSignResponse != nil:
-		if token.GetSubKind() == types.KindRecoverSecondFactor {
-			return nil, trace.BadParameter("user %q requested to recover second factor, expected password auth", token.GetUser())
-		}
-		return s.withResetTokenAuthAttemptCounter(ctx, token, func() error {
+	case *proto.AuthenticateUserWithRecoveryTokenRequest_U2FSignResponse:
+		return s.authenticateUserWithRecoveryLock(ctx, token, func() error {
 			_, err := s.CheckU2FSignResponse(ctx, token.GetUser(), &u2f.AuthenticateChallengeResponse{
-				KeyHandle:     req.U2FSignResponse.GetKeyHandle(),
-				SignatureData: req.U2FSignResponse.GetSignature(),
-				ClientData:    req.U2FSignResponse.GetClientData(),
+				KeyHandle:     req.GetU2FSignResponse().GetKeyHandle(),
+				SignatureData: req.GetU2FSignResponse().GetSignature(),
+				ClientData:    req.GetU2FSignResponse().GetClientData(),
 			})
 
 			return err
 		})
 
 	default: // password
-		if token.GetSubKind() == types.KindRecoverPassword {
-			return nil, trace.BadParameter("user %q requested to recover password, expected second factor auth", token.GetUser())
-		}
-
-		return s.withResetTokenAuthAttemptCounter(ctx, token, func() error {
-			return s.checkPasswordWOToken(token.GetUser(), req.Password)
+		return s.authenticateUserWithRecoveryLock(ctx, token, func() error {
+			return s.checkPasswordWOToken(token.GetUser(), req.GetPassword())
 		})
 	}
 }
 
-// withResetTokenAuthAttemptCounter counts number of failed attempts at providing a valid password or second factor.
+// authenticateUserWithRecoveryLock counts number of failed attempts at providing a valid password or second factor.
 // After max failed attempts, user's account is temporarily locked from logging in, and the reset token is deleted.
-func (a *Server) withResetTokenAuthAttemptCounter(ctx context.Context, token types.ResetPasswordToken, authenticateFn func() error) (types.ResetPasswordToken, error) {
-	var fnErr error
-	if token.GetAuthAttempts() < types.MaxRecoveryAttempts {
-		fnErr = authenticateFn()
-		if fnErr == nil {
-			// Create an approved recovery token for next step in recovery flow.
-			subKind := types.KindRecoverPasswordApproved
-			if token.GetSubKind() == types.KindRecoverSecondFactor {
-				subKind = types.KindRecoverSecondFactorApproved
-			}
-
-			approvedTokenReq := CreateResetPasswordTokenRequest{
-				Name: token.GetUser(),
-				Type: types.ResetPasswordTokenRecoveryApproved,
-			}
-
-			return a.createRecoveryToken(ctx, approvedTokenReq, subKind)
+func (s *Server) authenticateUserWithRecoveryLock(ctx context.Context, token types.ResetPasswordToken, authenticateFn func() error) (types.ResetPasswordToken, error) {
+	user, err := s.Identity.GetUser(token.GetUser(), false)
+	if err != nil {
+		if trace.IsNotFound(err) {
+			// If user is not found, still call authenticateFn. It should
+			// always return an error. This prevents username oracles and
+			// timing attacks.
+			return nil, authenticateFn()
 		}
-
-		token.IncrementAuthAttempt()
+		return nil, trace.Wrap(err)
 	}
 
-	// Do not update attempt counter in case if DB is flaky or down.
+	fnErr := authenticateFn()
+	if fnErr == nil {
+		if err := s.DeleteUserRecoveryAttempts(ctx, token.GetUser()); err != nil {
+			return nil, trace.Wrap(err)
+		}
+
+		// Return a new recovery token that has been marked approved for final step in recovery flow.
+		return s.createRecoveryToken(ctx, token.GetUser(), ResetPasswordTokenRecoveryApproved, token.GetRecoverType())
+	}
+
+	// Do not lock user in case if DB is flaky or down.
 	if trace.IsConnectionProblem(fnErr) {
 		return nil, trace.Wrap(fnErr)
 	}
 
-	// User is at last attempt, delete token and lock user's account.
-	if token.GetAuthAttempts() == types.MaxRecoveryAttempts {
-		lockUntil := a.clock.Now().UTC().Add(defaults.AccountLockInterval)
-		message := fmt.Sprintf("%v exceeds %v failed reset token auth attempts, account locked until %v, deleted token %v, and %v",
-			token.GetUser(), types.MaxRecoveryAttempts, apiutils.HumanTimeFormat(lockUntil), token.GetName(), AccountRecoveryEmailMarker)
-
-		log.Debug(message)
-
-		// Delete all token data related to this user.
-		if err := a.deleteResetPasswordTokens(ctx, token.GetUser()); err != nil {
-			log.Error(trace.DebugReport(err))
-		}
-
-		// Lock user account.
-		user, err := a.GetUser(token.GetUser(), false)
-		if err != nil {
-			log.Error(trace.DebugReport(err))
-			return nil, trace.Wrap(fnErr)
-		}
-
-		user.SetLocked(lockUntil, "user has exceeded maximum failed reset token auth attempts")
-		if err := a.Identity.UpsertUser(user); err != nil {
-			log.Error(trace.DebugReport(err))
-			return nil, trace.Wrap(fnErr)
-		}
-
-		return nil, trace.AccessDenied(message)
+	// Log failed attempt.
+	now := s.clock.Now().UTC()
+	attempt := types.RecoveryAttempt{Time: now, Expires: now.Add(defaults.AttemptTTL)}
+	if err := s.CreateUserRecoveryAttempt(ctx, token.GetUser(), attempt); err != nil {
+		log.Error(trace.DebugReport(err))
+		return nil, trace.Wrap(fnErr)
 	}
 
-	log.Debugf("%v user has less than %v failed reset token auth attempts", token.GetUser(), types.MaxRecoveryAttempts)
+	attempts, err := s.Identity.GetUserRecoveryAttempts(ctx, token.GetUser())
+	if err != nil {
+		log.Error(trace.DebugReport(err))
+		return nil, trace.Wrap(fnErr)
+	}
 
-	if err := a.UpdateResetPasswordToken(ctx, token); err != nil {
+	if !types.LastFailedRecoveryAttempt(defaults.MaxRecoveryAttempts, attempts, now) {
+		log.Debugf("%v user has less than %v failed account recovery attempts", token.GetUser(), defaults.MaxRecoveryAttempts)
+		return nil, trace.Wrap(fnErr)
+	}
+
+	// Reached max attempts.
+	lockUntil := s.clock.Now().UTC().Add(defaults.AccountLockInterval)
+	message := fmt.Sprintf("%v exceeds %v failed account recovery attempts, account locked until %v and %v",
+		token.GetUser(), defaults.MaxRecoveryAttempts, apiutils.HumanTimeFormat(lockUntil), AccountRecoveryEmailMarker)
+
+	log.Debug(message)
+
+	// Delete all token data related to this user, to force user to restart the recovery flow.
+	if err := s.deleteResetPasswordTokens(ctx, token.GetUser()); err != nil {
 		log.Error(trace.DebugReport(err))
 	}
 
-	return nil, trace.Wrap(fnErr)
-}
-
-// ChangePasswordOrSecondFactor changes a user's password or resets their second factors with the new one provided.
-// The reset token provided must be marked authenticated in order to change auth cred. When successful,
-// lock is removed from user (if any) so they can login immediately.
-//
-// Returns new account recovery tokens.
-func (s *Server) ChangePasswordOrSecondFactor(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (*proto.ChangePasswordOrSecondFactorResponse, error) {
-	if err := s.isAccountRecoveryAllowed(ctx); err != nil {
+	// Restart the attempt counter.
+	if err := s.DeleteUserRecoveryAttempts(ctx, token.GetUser()); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	if req.GetTokenID() == "" {
-		return nil, trace.BadParameter("missing token")
+	user.SetLocked(lockUntil, accountLockedMsg)
+	if err := s.Identity.UpsertUser(user); err != nil {
+		log.Error(trace.DebugReport(err))
+		return nil, trace.Wrap(fnErr)
 	}
 
-	if req.GetPassword() == nil && req.GetSecondFactorToken() == "" && req.GetU2FRegisterResponse() == nil {
-		return nil, trace.BadParameter("missing new authentication cred")
+	return nil, trace.AccessDenied(message)
+}
+
+// RecoverAccountWithToken changes a user's password or adds a new second factor.
+// The user token provided must be marked authenticated (approved) in order to change auth cred. When successful,
+// lock is removed from user (if any) so they can login immediately.
+//
+// Returns new account recovery tokens.
+func (s *Server) RecoverAccountWithToken(ctx context.Context, req *proto.NewUserAuthCredWithTokenRequest) (*proto.RecoverAccountWithTokenResponse, error) {
+	if err := s.isAccountRecoveryAllowed(ctx); err != nil {
+		return nil, trace.Wrap(err)
 	}
 
 	token, err := s.GetResetPasswordToken(ctx, req.GetTokenID())
@@ -401,30 +363,34 @@ func (s *Server) ChangePasswordOrSecondFactor(ctx context.Context, req *proto.Ch
 		return nil, trace.BadParameter("expired token")
 	}
 
-	if err := token.CheckSubKindType(types.ResetPasswordTokenRecoveryApproved); err != nil {
-		return nil, trace.Wrap(err)
+	if token.GetSubKind() != ResetPasswordTokenRecoveryApproved {
+		return nil, trace.BadParameter("invalid token")
+	}
+
+	// Check that the correct auth credential is being reset
+	switch token.GetRecoverType() {
+	case types.RecoverType_RECOVER_PASSWORD:
+		if req.GetPassword() == nil {
+			return nil, trace.BadParameter("expected a new password")
+		}
+	case types.RecoverType_RECOVER_U2F:
+		if req.GetU2FRegisterResponse() == nil {
+			return nil, trace.BadParameter("expected a new u2f register response")
+		}
+	case types.RecoverType_RECOVER_TOTP:
+		if req.GetSecondFactorToken() == "" {
+			return nil, trace.BadParameter("expected a second factor token")
+		}
+
 	}
 
 	// Set new auth cred.
 	if req.GetPassword() != nil {
-		if token.GetSubKind() == types.KindRecoverSecondFactorApproved {
-			return nil, trace.BadParameter("user %q requested to recover secondfactor, but received new password instead", token.GetUser())
-		}
-
 		// Set a new password.
 		if err := s.UpsertPassword(token.GetUser(), req.Password); err != nil {
 			return nil, trace.Wrap(err)
 		}
 	} else {
-		if token.GetSubKind() == types.KindRecoverPasswordApproved {
-			return nil, trace.BadParameter("user %q requested to recover password, but received new secondfactor instead", token.GetUser())
-		}
-
-		// Delete all previous mfa devices.
-		if err := s.resetMFA(ctx, token.GetUser()); err != nil {
-			return nil, trace.Wrap(err)
-		}
-
 		// Set the new second factor.
 		if err := s.changeUserSecondFactor(req, token); err != nil {
 			return nil, trace.Wrap(err)
@@ -458,7 +424,7 @@ func (s *Server) ChangePasswordOrSecondFactor(ctx context.Context, req *proto.Ch
 		}
 	}
 
-	return &proto.ChangePasswordOrSecondFactorResponse{
+	return &proto.RecoverAccountWithTokenResponse{
 		Username:      token.GetUser(),
 		RecoveryCodes: recoveryCodes,
 	}, nil
@@ -480,8 +446,10 @@ func (s *Server) generateAndUpsertRecoveryCodes(ctx context.Context, username st
 		hashedTokens[i].Value = hashedToken
 	}
 
-	rc := types.NewRecoveryCodes(hashedTokens)
-	rc.Created = s.GetClock().Now().UTC()
+	rc, err := types.NewRecoveryCodes(hashedTokens, s.GetClock().Now().UTC())
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 
 	if err := s.UpsertRecoveryCodes(ctx, username, *rc); err != nil {
 		return nil, trace.Wrap(err)
@@ -502,7 +470,7 @@ func (s *Server) generateAndUpsertRecoveryCodes(ctx context.Context, username st
 	return tokens, nil
 }
 
-// isAccountRecoveryAllowed gets cluster auth configuration and check if local auth
+// isAccountRecoveryAllowed gets cluster auth configuration and check if cloud, local auth
 // and second factor is allowed, which are required for account recovery.
 func (s *Server) isAccountRecoveryAllowed(ctx context.Context) error {
 	if modules.GetModules().Features().Cloud == false {
@@ -518,8 +486,7 @@ func (s *Server) isAccountRecoveryAllowed(ctx context.Context) error {
 		return trace.AccessDenied("local auth needs to be enabled")
 	}
 
-	// Second factor must be otp, u2f, or on.
-	if authPref.GetSecondFactor() == constants.SecondFactorOff || authPref.GetSecondFactor() == constants.SecondFactorOptional {
+	if !authPref.IsSecondFactorEnforced() {
 		return trace.AccessDenied("second factor must be enabled")
 	}
 
@@ -534,9 +501,9 @@ func generateRecoveryCodes() ([]string, error) {
 		return nil, trace.Wrap(err)
 	}
 
-	tokenList := make([]string, types.NumOfRecoveryCodes)
-	for i := 0; i < types.NumOfRecoveryCodes; i++ {
-		list, err := gen.Generate(types.NumWordsInRecoveryCode)
+	tokenList := make([]string, numOfRecoveryCodes)
+	for i := 0; i < numOfRecoveryCodes; i++ {
+		list, err := gen.Generate(numWordsInRecoveryCode)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -547,31 +514,30 @@ func generateRecoveryCodes() ([]string, error) {
 	return tokenList, nil
 }
 
-// createRecoveryToken creates a reset token, where its subkind is set to recovery related kinds as a marker
-// to differentiate between normal and recovery related tokens.
-func (a *Server) createRecoveryToken(ctx context.Context, req CreateResetPasswordTokenRequest, subKind string) (types.ResetPasswordToken, error) {
-	if req.Type != types.ResetPasswordTokenRecoveryStart && req.Type != types.ResetPasswordTokenRecoveryApproved {
-		return nil, trace.BadParameter("invalid recovery token type")
+// createRecoveryToken creates a user token for account recovery.
+func (s *Server) createRecoveryToken(ctx context.Context, username, tokenType string, recoverType types.RecoverType) (types.ResetPasswordToken, error) {
+	req := CreateResetPasswordTokenRequest{
+		Name: username,
+		Type: tokenType,
 	}
 
 	if err := req.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	newToken, err := a.newResetPasswordToken(req)
+	newToken, err := s.newResetPasswordToken(req)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	// Using subkind to mark token is for recovery and to remember
-	// what kind of reset (password or secondfactor) the user requested.
-	newToken.SetSubKind(subKind)
+	// Marks what recover type user requested.
+	newToken.SetRecoverType(recoverType)
 
-	if _, err := a.Identity.CreateResetPasswordToken(ctx, newToken); err != nil {
+	if _, err := s.Identity.CreateResetPasswordToken(ctx, newToken); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	if err := a.emitter.EmitAuditEvent(ctx, &apievents.ResetPasswordTokenCreate{
+	if err := s.emitter.EmitAuditEvent(ctx, &apievents.ResetPasswordTokenCreate{
 		Metadata: apievents.Metadata{
 			Type: events.ResetPasswordTokenCreateEvent,
 			Code: events.ResetPasswordTokenCreateCode,
@@ -583,11 +549,11 @@ func (a *Server) createRecoveryToken(ctx context.Context, req CreateResetPasswor
 		ResourceMetadata: apievents.ResourceMetadata{
 			Name:    req.Name,
 			TTL:     req.TTL.String(),
-			Expires: a.GetClock().Now().UTC().Add(req.TTL),
+			Expires: s.GetClock().Now().UTC().Add(req.TTL),
 		},
 	}); err != nil {
 		log.WithError(err).Warn("Failed to emit create reset password token event.")
 	}
 
-	return a.GetResetPasswordToken(ctx, newToken.GetName())
+	return s.GetResetPasswordToken(ctx, newToken.GetName())
 }

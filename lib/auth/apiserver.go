@@ -1161,7 +1161,7 @@ func (s *APIServer) changePasswordWithToken(auth ClientI, w http.ResponseWriter,
 		}
 	}
 
-	res, err := auth.ChangePasswordWithToken(r.Context(), &proto.ChangeUserAuthCredWithTokenRequest{
+	res, err := auth.ChangePasswordWithToken(r.Context(), &proto.NewUserAuthCredWithTokenRequest{
 		SecondFactorToken:   req.SecondFactorToken,
 		TokenID:             req.TokenID,
 		Password:            req.Password,

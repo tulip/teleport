@@ -22,44 +22,26 @@ import (
 	"github.com/gravitational/trace"
 )
 
-const (
-	NumOfRecoveryCodes     = 3
-	NumWordsInRecoveryCode = 8
-
-	RecoveryTokenLenBytes = 32
-	MaxRecoveryTokenTTL   = 3 * time.Hour
-	MaxRecoveryAttempts   = 3
-
-	KindRecoveryCodes = "recovery_codes"
-
-	KindRecoverPassword             = "recover_password"
-	KindRecoverSecondFactor         = "recover_secondfactor"
-	KindRecoverPasswordApproved     = "recover_password_approved"
-	KindRecoverSecondFactorApproved = "recover_secondfactor_approved"
-)
-
-// NewRecoveryCodes creates a new RecoveryCodes with the given codes.
-// Caller must set the Created field.
-func NewRecoveryCodes(codes []RecoveryCode) *RecoveryCodes {
-	return &RecoveryCodes{
-		Kind:    KindRecoveryCodes,
-		Version: V1,
+// NewRecoveryCodes creates a new RecoveryCodes with the given codes and created time.
+func NewRecoveryCodes(codes []RecoveryCode, created time.Time) (*RecoveryCodes, error) {
+	rc := &RecoveryCodes{
 		Codes:   codes,
+		Created: created,
 	}
+
+	if err := rc.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return rc, nil
 }
 
 // CheckAndSetDefaults validates fields and populates empty fields with default values.
 func (t *RecoveryCodes) CheckAndSetDefaults() error {
-	if t.Kind == "" {
-		return trace.BadParameter("missing Kind field")
-	}
+	t.setStaticFields()
 
-	if t.Version == "" {
-		t.Version = V1
-	}
-
-	if t.Codes == nil || len(t.Codes) < NumOfRecoveryCodes {
-		return trace.BadParameter("invalid Codes field")
+	if t.Codes == nil {
+		return trace.BadParameter("missing Codes field")
 	}
 
 	if t.Created.IsZero() {
@@ -69,33 +51,64 @@ func (t *RecoveryCodes) CheckAndSetDefaults() error {
 	return nil
 }
 
+func (t *RecoveryCodes) setStaticFields() {
+	t.Kind = KindRecoveryCodes
+	t.Version = V1
+}
+
 func (t *RecoveryCodes) GetKind() string               { return t.Kind }
 func (t *RecoveryCodes) GetVersion() string            { return t.Version }
 func (t *RecoveryCodes) GetCodes() []RecoveryCode      { return t.Codes }
 func (t *RecoveryCodes) SetCreation(created time.Time) { t.Created = created }
 
-// RecoveryAttempt is used to keep count of users failed attempts
-// at providing a valid recovery code.
+// RecoveryAttempt represents an unsuccessful attempt at recovering a user's account.
 type RecoveryAttempt struct {
-	// Attempts indicates number of times user failed.
-	Attempts int32 `json:"attempts"`
-	// Created is when this attempt was created.
-	Created time.Time `json:"created"`
+	// Time is time of the attempt.
+	Time time.Time `json:"time"`
+	// Expires defines the time when this attempt should expire.
+	Expires time.Time `json:"expires"`
 }
 
-func (a *RecoveryAttempt) Increment()            { a.Attempts += 1 }
-func (a *RecoveryAttempt) Get() int32            { return a.Attempts }
-func (a *RecoveryAttempt) GetCreated() time.Time { return a.Created }
 func (a *RecoveryAttempt) Check() error {
-	if a.Created.IsZero() {
-		return trace.BadParameter("missing parameter Created")
+	if a.Time.IsZero() {
+		return trace.BadParameter("missing parameter time")
+	}
+
+	if a.Expires.IsZero() {
+		return trace.BadParameter("missing parameter expires")
 	}
 
 	return nil
 }
 
-// ChangePasswordWithTokenResponse defines the response to a successful changing of password.
-type ChangePasswordWithTokenResponse struct {
-	WebSession    WebSession
-	RecoveryCodes []string
+// SortedRecoveryAttempts sorts recovery attempts by time.
+type SortedRecoveryAttempts []RecoveryAttempt
+
+// Len returns length of a role list.
+func (s SortedRecoveryAttempts) Len() int {
+	return len(s)
+}
+
+// Less stacks latest attempts to the end of the list.
+func (s SortedRecoveryAttempts) Less(i, j int) bool {
+	return s[i].Time.Before(s[j].Time)
+}
+
+// Swap swaps two attempts.
+func (s SortedRecoveryAttempts) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+// LastFailedRecoveryAttempt determines if user reached their max failed attempts.
+func LastFailedRecoveryAttempt(x int, attempts []RecoveryAttempt, now time.Time) bool {
+	var failed int
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if attempts[i].Expires.After(now) {
+			failed++
+		}
+		if failed >= x {
+			return true
+		}
+	}
+	return false
 }

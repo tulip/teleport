@@ -1884,7 +1884,7 @@ type IdentityService interface {
 	CreateResetPasswordToken(ctx context.Context, req CreateResetPasswordTokenRequest) (types.ResetPasswordToken, error)
 
 	// ChangePasswordWithToken changes password with token
-	ChangePasswordWithToken(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (*types.ChangePasswordWithTokenResponse, error)
+	ChangePasswordWithToken(ctx context.Context, req *proto.NewUserAuthCredWithTokenRequest) (*proto.ChangePasswordWithTokenResponse, error)
 
 	// VerifyRecoveryCode verifies a given recovery code.
 	VerifyRecoveryCode(ctx context.Context, req *proto.VerifyRecoveryCodeRequest) (types.ResetPasswordToken, error)
@@ -1893,8 +1893,9 @@ type IdentityService interface {
 	// second factor.
 	AuthenticateUserWithRecoveryToken(ctx context.Context, req *proto.AuthenticateUserWithRecoveryTokenRequest) (types.ResetPasswordToken, error)
 
-	// ChangePasswordOrSecondFactor verifies a given recovery token with a user's password or second-factor.
-	ChangePasswordOrSecondFactor(ctx context.Context, req *proto.ChangeUserAuthCredWithTokenRequest) (*proto.ChangePasswordOrSecondFactorResponse, error)
+	// RecoverAccountWithToken is the last step in the recovery flow that either changes a user
+	// password or adds a new mfa device depending on the request.
+	RecoverAccountWithToken(ctx context.Context, req *proto.NewUserAuthCredWithTokenRequest) (*proto.RecoverAccountWithTokenResponse, error)
 
 	// GetResetPasswordToken returns token
 	GetResetPasswordToken(ctx context.Context, username string) (types.ResetPasswordToken, error)
