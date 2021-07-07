@@ -26,6 +26,8 @@ import (
 	"github.com/gravitational/teleport/lib/utils"
 
 	"github.com/gravitational/trace"
+	"github.com/jonboulle/clockwork"
+	"github.com/pborman/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -34,7 +36,9 @@ import (
 type resourceCollector interface {
 	// WatchKinds specifies the resource kinds to watch.
 	WatchKinds() []types.WatchKind
-
+	// notifyStale are called when the maximum acceptable staleness (if specified)
+	// is exceeded.
+	notifyStale(context.Context)
 	// getResourcesAndUpdateCurrent is called when the resources should be
 	// (re-)fetched directly.
 	getResourcesAndUpdateCurrent(context.Context) error
@@ -55,6 +59,11 @@ type ResourceWatcherConfig struct {
 	// RefetchPeriod is a period after which to explicitly refetch the resources.
 	// It is to protect against unexpected cache syncing issues.
 	RefetchPeriod time.Duration
+	// MaxStaleness is a maximum acceptable staleness for the locally maintained
+	// resources, zero implies no staleness detection.
+	MaxStaleness time.Duration
+	// Clock is used to control time.
+	Clock clockwork.Clock
 	// Client is used to create new watchers.
 	Client types.Events
 }
@@ -62,7 +71,7 @@ type ResourceWatcherConfig struct {
 // CheckAndSetDefaults checks parameters and sets default values.
 func (cfg *ResourceWatcherConfig) CheckAndSetDefaults() error {
 	if cfg.ParentContext == nil {
-		return trace.BadParameter("missing parameter ParentContext")
+		cfg.ParentContext = context.Background()
 	}
 	if cfg.Component == "" {
 		return trace.BadParameter("missing parameter Component")
@@ -75,6 +84,9 @@ func (cfg *ResourceWatcherConfig) CheckAndSetDefaults() error {
 	}
 	if cfg.RefetchPeriod == 0 {
 		cfg.RefetchPeriod = defaults.LowResPollingPeriod
+	}
+	if cfg.Clock == nil {
+		cfg.Clock = clockwork.NewRealClock()
 	}
 	if cfg.Client == nil {
 		return trace.BadParameter("missing parameter Client")
@@ -103,7 +115,7 @@ func newResourceWatcher(collector resourceCollector, cfg ResourceWatcherConfig) 
 		retry:                 retry,
 		ResetC:                make(chan struct{}),
 	}
-	go p.watchResources()
+
 	return p, nil
 }
 
@@ -119,6 +131,10 @@ type resourceWatcher struct {
 	// retry is used to manage backoff logic for watchers.
 	retry utils.Retry
 
+	// failureStartedAt records when the current sync failures were first
+	// detected, zero if there are no failures present.
+	failureStartedAt utils.TimeUnderMutex
+
 	// ResetC is a channel to notify of internal watcher reset (used in tests).
 	ResetC chan struct{}
 }
@@ -129,18 +145,38 @@ func (p *resourceWatcher) Done() <-chan struct{} {
 }
 
 // Close closes resource watcher and cancels all the functions.
-func (p *resourceWatcher) Close() error {
+func (p *resourceWatcher) Close() {
 	p.cancel()
-	return nil
 }
 
-// watchResources runs a watch loop.
-func (p *resourceWatcher) watchResources() {
+// hasStaleView returns true when the local view has failed to be updated
+// for longer than the MaxStaleness bound.
+func (p *resourceWatcher) hasStaleView() bool {
+	if p.MaxStaleness == 0 {
+		return false
+	}
+	failStart := p.failureStartedAt.Get()
+	if failStart.IsZero() {
+		return false
+	}
+	return p.Clock.Since(failStart) > p.MaxStaleness
+}
+
+// RunWatchLoop runs a watch loop.
+func (p *resourceWatcher) RunWatchLoop() {
 	for {
 		p.Log.WithField("retry", p.retry).Debug("Starting watch.")
 		err := p.watch()
 		if err != nil {
 			p.Log.WithError(err).Warning("Restart watch on error.")
+			if p.MaxStaleness != 0 {
+				p.failureStartedAt.SetIfZero(p.Clock.Now())
+			}
+		}
+		if p.hasStaleView() {
+			failStart := p.failureStartedAt.Get()
+			p.Log.Warningf("Maximum staleness %v exceeded: failure started at %v.", p.MaxStaleness, failStart)
+			p.notifyStale(p.ctx)
 		}
 		select {
 		case p.ResetC <- struct{}{}:
@@ -202,6 +238,9 @@ func (p *resourceWatcher) watch() error {
 		return trace.Wrap(err)
 	}
 	p.retry.Reset()
+	if p.MaxStaleness != 0 {
+		p.failureStartedAt.Clear()
+	}
 
 	for {
 		select {
@@ -225,9 +264,9 @@ type ProxyWatcherConfig struct {
 	ResourceWatcherConfig
 	// ProxyGetter is used to directly fetch the list of active proxies.
 	ProxyGetter
-	// ProxiesC is a channel used by the watcher to push updates to the proxy
-	// set.  It receives a fresh list at startup and subsequently a list of all
-	// known proxies whenever an addition or deletion is detected.
+	// ProxiesC is a channel used to report the current proxy set. It receives
+	// a fresh list at startup and subsequently a list of all known proxies
+	// whenever an addition or deletion is detected.
 	ProxiesC chan []types.Server
 }
 
@@ -280,7 +319,7 @@ type proxyCollector struct {
 	rw      sync.RWMutex
 }
 
-// GetCurrent returns the currently stored proxy set.
+// GetCurrent returns the currently stored proxies.
 func (p *proxyCollector) GetCurrent() []types.Server {
 	p.rw.RLock()
 	defer p.rw.RUnlock()
@@ -295,6 +334,8 @@ func (p *proxyCollector) WatchKinds() []types.WatchKind {
 		},
 	}
 }
+
+func (p *proxyCollector) notifyStale(context.Context) {}
 
 // getResourcesAndUpdateCurrent is called when the resources should be
 // (re-)fetched directly.
@@ -367,10 +408,237 @@ func (p *proxyCollector) broadcastUpdate(ctx context.Context) error {
 	return nil
 }
 
-func serverMapValues(m map[string]types.Server) []types.Server {
-	servers := make([]types.Server, 0, len(m))
-	for _, s := range m {
-		servers = append(servers, s)
+func serverMapValues(serverMap map[string]types.Server) []types.Server {
+	servers := make([]types.Server, 0, len(serverMap))
+	for _, server := range serverMap {
+		servers = append(servers, server)
 	}
 	return servers
+}
+
+// LockWatcherConfig is a LockWatcher configuration.
+type LockWatcherConfig struct {
+	ResourceWatcherConfig
+	LockGetter
+}
+
+// CheckAndSetDefaults checks parameters and sets default values.
+func (cfg *LockWatcherConfig) CheckAndSetDefaults() error {
+	if err := cfg.ResourceWatcherConfig.CheckAndSetDefaults(); err != nil {
+		return trace.Wrap(err)
+	}
+	if cfg.MaxStaleness == 0 {
+		cfg.MaxStaleness = defaults.LockMaxStaleness
+	}
+	if cfg.LockGetter == nil {
+		getter, ok := cfg.Client.(LockGetter)
+		if !ok {
+			return trace.BadParameter("missing parameter LockGetter and Client not usable as LockGetter")
+		}
+		cfg.LockGetter = getter
+	}
+	return nil
+}
+
+// NewLockWatcher returns a new instance of LockWatcher.
+func NewLockWatcher(cfg LockWatcherConfig) (*LockWatcher, error) {
+	if err := cfg.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	collector := &lockCollector{
+		LockWatcherConfig: cfg,
+	}
+	watcher, err := newResourceWatcher(collector, cfg.ResourceWatcherConfig)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &LockWatcher{watcher, collector}, nil
+}
+
+// LockWatcher is built on top of resourceWatcher to monitor changes to locks.
+type LockWatcher struct {
+	*resourceWatcher
+	*lockCollector
+}
+
+// lockCollector accompanies resourceWatcher when monitoring locks.
+type lockCollector struct {
+	LockWatcherConfig
+	// current holds a map of the currently known locks (keyed by lock name,
+	// RWMutex protected).
+	current    map[string]types.Lock
+	currentErr error
+	rw         sync.RWMutex
+	// subscriptionMap is a map of subscribers to broadcast the changes to.
+	subscriptionMap sync.Map
+}
+
+// Subscribe is used to subscribe to the lock updates.
+func (p *lockCollector) Subscribe(targets []types.LockTarget) (LockWatcherSubscription, error) {
+	sub := LockWatcherSubscription{
+		collector:    p,
+		ID:           uuid.New(),
+		LockInForceC: make(chan types.Lock),
+		StaleC:       make(chan struct{}),
+		Targets:      targets,
+	}
+	p.subscriptionMap.Store(sub.ID, sub)
+	return sub, nil
+}
+
+// LockWatcherSubscription holds channels to receive the lock updates on.
+type LockWatcherSubscription struct {
+	// collector that issued this subscription.
+	collector *lockCollector
+	// ID is a unique identifier of this subscription in the collector's
+	// subscription map.
+	ID string
+	// LockInForceC is a channel to receive the lock updates on.
+	LockInForceC chan types.Lock
+	// StaleC is pinged when the collector's lock view becomes stale.
+	StaleC chan struct{}
+	// Targets can be used to filter the received lock updates.
+	Targets []types.LockTarget
+}
+
+// Unsubscribe removes this subscription from the collector's subscription map
+// and allows its resources to be deallocated.
+func (s LockWatcherSubscription) Unsubscribe() {
+	s.collector.subscriptionMap.Delete(s.ID)
+}
+
+// GetLocksInForce returns the stored locks in force.
+func (p *lockCollector) GetLockInForce(targets ...types.LockTarget) (types.Lock, error) {
+	p.rw.RLock()
+	defer p.rw.RUnlock()
+	if p.currentErr != nil {
+		return nil, p.currentErr
+	}
+	return lockInForce(p.Clock, p.current, targets), nil
+}
+
+// WatchKinds specifies the resource kinds to watch.
+func (p *lockCollector) WatchKinds() []types.WatchKind {
+	return []types.WatchKind{
+		{
+			Kind: types.KindLock,
+		},
+	}
+}
+
+// notifyStale is called when the maximum acceptable staleness (if specified)
+// is exceeded.
+func (p *lockCollector) notifyStale(ctx context.Context) {
+	p.subscriptionMap.Range(func(key, value interface{}) bool {
+		s, ok := value.(LockWatcherSubscription)
+		if !ok {
+			p.Log.Warningf("Unexpected subscription type %T.", value)
+			return true
+		}
+		select {
+		case s.StaleC <- struct{}{}:
+		case <-ctx.Done():
+			return false
+		}
+		return true
+	})
+
+	if p.currentErr != nil {
+		return
+	}
+	p.rw.Lock()
+	defer p.rw.Unlock()
+	p.current = nil
+	p.currentErr = trace.ConnectionProblem(nil, "maximum staleness %v exceeded", p.MaxStaleness)
+}
+
+// getResourcesAndUpdateCurrent is called when the resources should be
+// (re-)fetched directly.
+func (p *lockCollector) getResourcesAndUpdateCurrent(ctx context.Context) error {
+	locks, err := p.GetLocks(ctx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	newCurrent := make(map[string]types.Lock, len(locks))
+	for _, lock := range locks {
+		newCurrent[lock.GetName()] = lock
+	}
+
+	p.rw.Lock()
+	defer p.rw.Unlock()
+	p.current = newCurrent
+	p.currentErr = nil
+	return trace.Wrap(p.broadcastUpdate(ctx))
+}
+
+// processEventAndUpdateCurrent is called when a watcher event is received.
+func (p *lockCollector) processEventAndUpdateCurrent(ctx context.Context, event types.Event) error {
+	if event.Resource == nil || event.Resource.GetKind() != types.KindLock {
+		p.Log.Warningf("Unexpected event: %v.", event)
+		return nil
+	}
+
+	p.rw.Lock()
+	defer p.rw.Unlock()
+
+	switch event.Type {
+	case types.OpDelete:
+		delete(p.current, event.Resource.GetName())
+		// Always broadcast when a lock is deleted.
+		return trace.Wrap(p.broadcastUpdate(ctx))
+	case types.OpPut:
+		lock, ok := event.Resource.(types.Lock)
+		if !ok {
+			p.Log.Warningf("Unexpected resource type %T.", event.Resource)
+			return nil
+		}
+		p.current[lock.GetName()] = lock
+		return trace.Wrap(p.broadcastUpdate(ctx))
+	default:
+		p.Log.Warningf("Skipping unsupported event type %v.", event.Type)
+		return nil
+	}
+}
+
+// broadcastUpdate broadcasts information about updating the proxy set.
+func (p *lockCollector) broadcastUpdate(ctx context.Context) error {
+	var err error
+	p.subscriptionMap.Range(func(key, value interface{}) bool {
+		s, ok := value.(LockWatcherSubscription)
+		if !ok {
+			p.Log.Warningf("Unexpected subscription type %T.", value)
+			return true
+		}
+		lock := lockInForce(p.Clock, p.current, s.Targets)
+		if lock == nil {
+			return true
+		}
+		select {
+		case s.LockInForceC <- lock:
+		case <-ctx.Done():
+			err = trace.ConnectionProblem(ctx.Err(), "context is closing")
+			return false
+		}
+		return true
+	})
+	return err
+}
+
+// lockInForce returns an active lock matching the targets from the lockMap,
+// nil if not found.
+func lockInForce(clock clockwork.Clock, lockMap map[string]types.Lock, targets []types.LockTarget) types.Lock {
+	for _, lock := range lockMap {
+		if !lock.IsInForce(clock) {
+			continue
+		}
+		if len(targets) == 0 {
+			return lock
+		}
+		for _, target := range targets {
+			if target.Match(lock) {
+				return lock
+			}
+		}
+	}
+	return nil
 }

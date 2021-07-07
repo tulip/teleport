@@ -273,6 +273,11 @@ const (
 
 	// NodeJoinTokenTTL is when a token for nodes expires.
 	NodeJoinTokenTTL = 4 * time.Hour
+
+	// LockMaxStaleness is the maximum staleness for cached lock resources
+	// to be deemed acceptable for lock evaluation.  If exceeded, the locking
+	// fallback logic is applied.
+	LockMaxStaleness = 5 * time.Minute
 )
 
 var (

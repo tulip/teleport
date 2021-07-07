@@ -369,6 +369,9 @@ func (s *server) disconnectClusters() error {
 }
 
 func (s *server) periodicFunctions() {
+	go s.proxyWatcher.RunWatchLoop()
+	defer s.proxyWatcher.Close()
+
 	ticker := time.NewTicker(defaults.ResyncInterval)
 	defer ticker.Stop()
 
@@ -558,13 +561,11 @@ func (s *server) Start() error {
 
 func (s *server) Close() error {
 	s.cancel()
-	s.proxyWatcher.Close()
 	return s.srv.Close()
 }
 
 func (s *server) Shutdown(ctx context.Context) error {
 	s.cancel()
-	s.proxyWatcher.Close()
 	return s.srv.Shutdown(ctx)
 }
 

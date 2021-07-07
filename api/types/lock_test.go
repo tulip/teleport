@@ -54,17 +54,14 @@ func TestLockTargetMatch(t *testing.T) {
 	lock, err := NewLock("some-lock", LockSpecV2{Target: target})
 	require.NoError(t, err)
 
-	matched, err := target.Match(lock)
-	require.NoError(t, err)
+	matched := target.Match(lock)
 	require.True(t, matched)
 
 	target.Node = "host-2"
-	matched, err = target.Match(lock)
-	require.NoError(t, err)
+	matched = target.Match(lock)
 	require.False(t, matched)
 
 	target.Node = ""
-	matched, err = target.Match(lock)
-	require.NoError(t, err)
+	matched = target.Match(lock)
 	require.True(t, matched)
 }

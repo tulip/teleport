@@ -584,6 +584,17 @@ func (s *remoteSite) dialWithAgent(params DialParams) (net.Conn, error) {
 		return nil, trace.Wrap(err)
 	}
 
+	lockWatcher, err := services.NewLockWatcher(services.LockWatcherConfig{
+		ResourceWatcherConfig: services.ResourceWatcherConfig{
+			Component: teleport.ComponentReverseTunnelServer,
+			Log:       s.Entry,
+			Client:    s.remoteClient,
+		},
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	// Create a forwarding server that serves a single SSH connection on it. This
 	// server does not need to close, it will close and release all resources
 	// once conn is closed.
@@ -607,6 +618,7 @@ func (s *remoteSite) dialWithAgent(params DialParams) (net.Conn, error) {
 		HostUUID:        s.srv.ID,
 		Emitter:         s.srv.Config.Emitter,
 		ParentContext:   s.srv.Context,
+		LockWatcher:     lockWatcher,
 	}
 	remoteServer, err := forward.New(serverConfig)
 	if err != nil {

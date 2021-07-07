@@ -17,10 +17,12 @@ limitations under the License.
 package types
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gravitational/teleport/api/utils"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/gravitational/trace"
 	"github.com/jonboulle/clockwork"
 )
@@ -201,19 +203,31 @@ func (t *LockTarget) FromMap(m map[string]string) error {
 }
 
 // Match returns true if the lock's target is matched by this target.
-func (t LockTarget) Match(lock Lock) (bool, error) {
-	targetMap, err := t.IntoMap()
-	if err != nil {
-		return false, trace.Wrap(err)
+func (t LockTarget) Match(lock Lock) bool {
+	lockTarget := lock.Target()
+	if t.User != "" && lockTarget.User != t.User {
+		return false
 	}
-	lockTargetMap, err := lock.Target().IntoMap()
-	if err != nil {
-		return false, trace.Wrap(err)
+	if t.Role != "" && lockTarget.Role != t.Role {
+		return false
 	}
-	for key := range targetMap {
-		if targetMap[key] != "" && targetMap[key] != lockTargetMap[key] {
-			return false, nil
-		}
+	if t.Cluster != "" && lockTarget.Cluster != t.Cluster {
+		return false
 	}
-	return true, nil
+	if t.Login != "" && lockTarget.Login != t.Login {
+		return false
+	}
+	if t.Node != "" && lockTarget.Node != t.Node {
+		return false
+	}
+	if t.MFADevice != "" && lockTarget.MFADevice != t.MFADevice {
+		return false
+	}
+	return true
+}
+
+// String returns string representation of the LockTarget.
+func (t LockTarget) String() string {
+	p := &t
+	return strings.TrimSpace(proto.CompactTextString(p))
 }

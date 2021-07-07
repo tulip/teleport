@@ -826,7 +826,8 @@ func (proxy *ProxyClient) dialAuthServer(ctx context.Context, clusterName string
 		// it to the end of our own message:
 		serverErrorMsg, _ := ioutil.ReadAll(proxyErr)
 		return nil, trace.ConnectionProblem(err, "failed connecting to node %v. %s",
-			nodeName(strings.Split(address, "@")[0]), serverErrorMsg)
+			nodeName(strings.Split(address, "@")[0]),
+			serverErrorMsg)
 	}
 	return utils.NewPipeNetConn(
 		proxyReader,

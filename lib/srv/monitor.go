@@ -26,6 +26,7 @@ import (
 
 	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/lib/events"
+	"github.com/gravitational/teleport/lib/services"
 
 	"github.com/gravitational/trace"
 	"github.com/jonboulle/clockwork"
@@ -55,6 +56,7 @@ type TrackingConn interface {
 
 // MonitorConfig is a wiretap configuration
 type MonitorConfig struct {
+	LockWatch services.LockWatcherSubscription
 	// DisconnectExpiredCert is a point in time when
 	// the certificate should be disconnected
 	DisconnectExpiredCert time.Time
@@ -79,7 +81,7 @@ type MonitorConfig struct {
 	Emitter apievents.Emitter
 	// Entry is a logging entry
 	Entry log.FieldLogger
-	// A message sent to the client when the idle timeout expires
+	// IdleTimeoutMessage is sent to the client when the idle timeout expires.
 	IdleTimeoutMessage string
 }
 
@@ -88,8 +90,8 @@ func (m *MonitorConfig) CheckAndSetDefaults() error {
 	if m.Context == nil {
 		return trace.BadParameter("missing parameter Context")
 	}
-	if m.DisconnectExpiredCert.IsZero() && m.ClientIdleTimeout == 0 {
-		return trace.BadParameter("either DisconnectExpiredCert or ClientIdleTimeout should be set")
+	if m.LockWatch.ID == "" {
+		return trace.BadParameter("missing parameter LockWatch")
 	}
 	if m.Conn == nil {
 		return trace.BadParameter("missing parameter Conn")
@@ -133,6 +135,9 @@ type Monitor struct {
 
 // Start starts monitoring connection
 func (w *Monitor) Start() {
+	// Unsubscribe from the lock watcher once the monitor is done.
+	defer w.LockWatch.Unsubscribe()
+
 	var certTime <-chan time.Time
 	if !w.DisconnectExpiredCert.IsZero() {
 		t := w.Clock.NewTicker(w.DisconnectExpiredCert.Sub(w.Clock.Now().UTC()))
@@ -147,7 +152,7 @@ func (w *Monitor) Start() {
 
 	for {
 		select {
-		// certificate has expired, disconnect
+		// Expired certificate.
 		case <-certTime:
 			event := &apievents.ClientDisconnect{
 				Metadata: apievents.Metadata{
@@ -173,6 +178,8 @@ func (w *Monitor) Start() {
 			w.Entry.Debugf("Disconnecting client: %v", event.Reason)
 			w.Conn.Close()
 			return
+
+		// Idle timeout.
 		case <-idleTime:
 			now := w.Clock.Now().UTC()
 			clientLastActive := w.Tracker.GetClientLastActive()
@@ -216,6 +223,43 @@ func (w *Monitor) Start() {
 			}
 			w.Entry.Debugf("Next check in %v", w.ClientIdleTimeout-now.Sub(clientLastActive))
 			idleTime = w.Clock.After(w.ClientIdleTimeout - now.Sub(clientLastActive))
+
+		// Lock in force.
+		case lock := <-w.LockWatch.LockInForceC:
+			event := &apievents.ClientDisconnect{
+				Metadata: apievents.Metadata{
+					Type: events.ClientDisconnectEvent,
+					Code: events.ClientDisconnectCode,
+				},
+				UserMetadata: apievents.UserMetadata{
+					Login: w.Login,
+					User:  w.TeleportUser,
+				},
+				ConnectionMetadata: apievents.ConnectionMetadata{
+					LocalAddr:  w.Conn.LocalAddr().String(),
+					RemoteAddr: w.Conn.RemoteAddr().String(),
+				},
+				ServerMetadata: apievents.ServerMetadata{
+					ServerID: w.ServerID,
+				},
+				Reason: services.LockInForceMessage(lock),
+			}
+			if err := w.Emitter.EmitAuditEvent(w.Context, event); err != nil {
+				w.Entry.WithError(err).Warn("Failed to emit audit event.")
+			}
+			w.Entry.Debugf("Disconnecting client: %v.", event.Reason)
+
+			if w.MessageWriter != nil {
+				if _, err := w.MessageWriter.WriteString(event.Reason); err != nil {
+					w.Entry.WithError(err).Warn("Failed to send locked-out message.")
+				}
+			}
+			w.Conn.Close()
+			return
+
+		case <-w.LockWatch.StaleC:
+			// TODO(andrej): Handle stale lock views.
+
 		case <-w.Context.Done():
 			w.Entry.Debugf("Releasing associated resources - context has been closed.")
 			return
