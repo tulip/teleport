@@ -256,7 +256,7 @@ message RequestStateSetter {
     wrappers.LabelValues Annotations = 5 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "annotations,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/v2/types/wrappers.Traits"
     ];
     // Roles, if present, overrides the existing set of roles associated
     // with the access request.

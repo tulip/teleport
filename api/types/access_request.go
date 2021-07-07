@@ -23,7 +23,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/gravitational/teleport/api/utils"
+	"github.com/gravitational/teleport/api/v2/utils"
 
 	"github.com/gravitational/trace"
 )

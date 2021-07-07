@@ -631,7 +631,7 @@ message ClusterAuditConfigSpecV2 {
     wrappers.StringValues AuditEventsURI = 4 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "audit_events_uri,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Strings"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/v2/types/wrappers.Strings"
     ];
 
     // EnableContinuousBackups is used to enable (or disable) PITR (Point-In-Time Recovery).
@@ -759,7 +759,7 @@ message AuthPreferenceSpecV2 {
     // SecondFactor is the type of second factor.
     string SecondFactor = 2 [
         (gogoproto.jsontag) = "second_factor,omitempty",
-        (gogoproto.casttype) = "github.com/gravitational/teleport/api/constants.SecondFactorType"
+        (gogoproto.casttype) = "github.com/gravitational/teleport/api/v2/constants.SecondFactorType"
     ];
 
     // ConnectorName is the name of the OIDC or SAML connector. If this value is
@@ -943,7 +943,7 @@ message AccessReview {
     wrappers.LabelValues Annotations = 6 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "annotations,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/v2/types/wrappers.Traits"
     ];
 
     // ThresholdIndexes stores the indexes of thresholds which this review matches
@@ -1029,7 +1029,7 @@ message AccessRequestSpecV3 {
     wrappers.LabelValues ResolveAnnotations = 8 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "resolve_annotations,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/v2/types/wrappers.Traits"
     ];
 
     // SystemAnnotations is a set of programmatically generated annotations attached
@@ -1040,7 +1040,7 @@ message AccessRequestSpecV3 {
     wrappers.LabelValues SystemAnnotations = 9 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "system_annotations,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/v2/types/wrappers.Traits"
     ];
 
     // Thresholds is a list of review thresholds relevant to this request.  Order must be
@@ -1360,7 +1360,7 @@ message AccessRequestConditions {
     wrappers.LabelValues Annotations = 3 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "annotations,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/v2/types/wrappers.Traits"
     ];
 
     // Thresholds is a list of thresholds, one of which must be met in order for reviews
@@ -1472,7 +1472,7 @@ message UserSpecV2 {
     wrappers.LabelValues Traits = 5 [
         (gogoproto.nullable) = false,
         (gogoproto.jsontag) = "traits,omitempty",
-        (gogoproto.customtype) = "github.com/gravitational/teleport/api/types/wrappers.Traits"
+        (gogoproto.customtype) = "github.com/gravitational/teleport/api/v2/types/wrappers.Traits"
     ];
 
     // Status is a login status of the user

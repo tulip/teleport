@@ -26,9 +26,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gravitational/teleport/api/identityfile"
-	"github.com/gravitational/teleport/api/profile"
-	"github.com/gravitational/teleport/api/utils/sshutils"
+	"github.com/gravitational/teleport/api/v2/identityfile"
+	"github.com/gravitational/teleport/api/v2/profile"
+	"github.com/gravitational/teleport/api/v2/utils/sshutils"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
