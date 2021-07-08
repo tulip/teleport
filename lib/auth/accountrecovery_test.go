@@ -30,6 +30,7 @@ import (
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/modules"
 	"github.com/gravitational/trace"
+	"github.com/jonboulle/clockwork"
 	"github.com/pquerna/otp/totp"
 	"github.com/stretchr/testify/require"
 	"github.com/tstranex/u2f"
@@ -447,6 +448,7 @@ func TestChangePasswordWithRecoveryTokenAndU2F(t *testing.T) {
 func TestLockWhenMaxFailedVerifyingRecoveryCode(t *testing.T) {
 	srv := newTestTLSServer(t)
 	ctx := context.Background()
+	fakeClock := srv.Clock().(clockwork.FakeClock)
 
 	defaultModules := modules.GetModules()
 	defer modules.SetModules(defaultModules)
@@ -476,6 +478,15 @@ func TestLockWhenMaxFailedVerifyingRecoveryCode(t *testing.T) {
 	require.True(t, user.GetStatus().IsLocked)
 	require.False(t, user.GetStatus().LockExpires.IsZero())
 	require.False(t, user.GetStatus().RecoveryAttemptLockExpires.IsZero())
+
+	// Advance time and make sure we can try recovery again with a valid code this time.
+	fakeClock.Advance(defaults.AccountLockInterval)
+	_, err = srv.Auth().VerifyRecoveryCode(ctx, &proto.VerifyRecoveryCodeRequest{
+		Username:     u.username,
+		RecoveryCode: []byte(u.recoveryCodes[0]),
+	})
+	require.NoError(t, err)
+
 }
 
 // TestLockWhenMaxFailedAuthenticatingWithToken tests if token is deleted and

@@ -47,16 +47,14 @@ func (s *Server) ChangePasswordWithToken(ctx context.Context, req *proto.NewUser
 	}
 
 	var recoveryCodes []string
-	recoveryAllowed := true
+	recoveryAllowed := false
 
 	// Only user's with email as their username and running cloud can receive recovery codes.
 	if _, err := mail.ParseAddress(user.GetName()); err == nil {
 		if err := s.isAccountRecoveryAllowed(ctx); err != nil {
-			if !trace.IsAccessDenied(err) {
-				return nil, trace.Wrap(err)
-			}
-			recoveryAllowed = false
+			return nil, trace.Wrap(err)
 		}
+		recoveryAllowed = true
 	}
 
 	if recoveryAllowed && (req.SecondFactorToken != "" || req.U2FRegisterResponse != nil) {
